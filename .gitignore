@@ -1,0 +1,9 @@
+# Build artifacts
+build/
+iso/
+*.iso
+
+# Editor / OS files
+.vscode/
+*.swp
+*~
