@@ -31,3 +31,5 @@ align 16
 stack_bottom:
     resb 16384
 stack_top:
+
+section .note.GNU-stack noalloc noexec nowrite progbits
