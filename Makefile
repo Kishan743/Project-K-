@@ -21,8 +21,12 @@ build/kernel.o: src/kernel.c
 	mkdir -p build
 	$(CC) $(CFLAGS) -c src/kernel.c -o build/kernel.o
 
-$(KERNEL): build/boot.o build/kernel.o linker.ld
-	$(LD) $(LDFLAGS) -o $(KERNEL) build/boot.o build/kernel.o
+build/terminal.o: src/drivers/terminal.c src/drivers/terminal.h
+	mkdir -p build
+	$(CC) $(CFLAGS) -c src/drivers/terminal.c -o build/terminal.o
+
+$(KERNEL): build/boot.o build/kernel.o build/terminal.o linker.ld
+	$(LD) $(LDFLAGS) -o $(KERNEL) build/boot.o build/kernel.o build/terminal.o
 
 iso: $(KERNEL)
 	mkdir -p iso/boot/grub
