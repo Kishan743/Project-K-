@@ -25,8 +25,36 @@ build/terminal.o: src/drivers/terminal.c src/drivers/terminal.h
 	mkdir -p build
 	$(CC) $(CFLAGS) -c src/drivers/terminal.c -o build/terminal.o
 
-$(KERNEL): build/boot.o build/kernel.o build/terminal.o linker.ld
-	$(LD) $(LDFLAGS) -o $(KERNEL) build/boot.o build/kernel.o build/terminal.o
+build/gdt.o: src/kernel/gdt.c src/kernel/gdt.h
+	mkdir -p build
+	$(CC) $(CFLAGS) -c src/kernel/gdt.c -o build/gdt.o
+
+build/gdt_flush.o: src/kernel/gdt_flush.asm
+	mkdir -p build
+	$(AS) $(ASFLAGS) src/kernel/gdt_flush.asm -o build/gdt_flush.o
+
+build/pic.o: src/kernel/pic.c src/kernel/pic.h
+	mkdir -p build
+	$(CC) $(CFLAGS) -c src/kernel/pic.c -o build/pic.o
+
+build/pit.o: src/kernel/pit.c src/kernel/pit.h
+	mkdir -p build
+	$(CC) $(CFLAGS) -c src/kernel/pit.c -o build/pit.o
+
+build/isr.o: src/kernel/isr.asm
+	mkdir -p build
+	$(AS) $(ASFLAGS) src/kernel/isr.asm -o build/isr.o
+
+build/idt.o: src/kernel/idt.c src/kernel/idt.h
+	mkdir -p build
+	$(CC) $(CFLAGS) -c src/kernel/idt.c -o build/idt.o
+
+build/idt_flush.o: src/kernel/idt_flush.asm
+	mkdir -p build
+	$(AS) $(ASFLAGS) src/kernel/idt_flush.asm -o build/idt_flush.o
+
+$(KERNEL): build/boot.o build/kernel.o build/terminal.o build/gdt.o build/gdt_flush.o build/pic.o build/pit.o build/idt.o build/idt_flush.o build/isr.o linker.ld
+	$(LD) $(LDFLAGS) -o $(KERNEL) build/boot.o build/kernel.o build/terminal.o build/gdt.o build/gdt_flush.o build/pic.o build/pit.o build/idt.o build/idt_flush.o build/isr.o
 
 iso: $(KERNEL)
 	mkdir -p iso/boot/grub
