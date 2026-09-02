@@ -1,5 +1,6 @@
 #include "idt.h"
 #include "../drivers/terminal.h"
+#include "timer.h"
 #include "pic.h"
 extern void idt_flush(uint32_t);
 
@@ -176,18 +177,15 @@ void exception_handler(struct interrupt_frame* frame)
     while (1)
     {
         __asm__ volatile ("cli; hlt");
-    }
 }
-
-volatile uint32_t timer_ticks = 0;
-
+}
 void irq_handler(struct interrupt_frame* frame)
 {
     uint32_t irq = frame->interrupt_number - 32;
 
     if (irq == 0)
     {
-        timer_ticks++;
+        timer_handler();
     }
 
     pic_send_eoi((uint8_t)irq);
