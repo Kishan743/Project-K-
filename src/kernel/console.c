@@ -31,9 +31,26 @@ static int string_equals(const char* a, const char* b)
     return *a == '\0' && *b == '\0';
 }
 
+static int string_starts_with(const char* text, const char* prefix)
+{
+    while (*prefix)
+    {
+        if (*text != *prefix)
+        {
+            return 0;
+        }
+
+        text++;
+        prefix++;
+    }
+
+    return 1;
+}
+
 static void console_clear_input(void)
 {
     input_length = 0;
+    input_buffer[0] = '\0';
 }
 
 static void console_backspace(void)
@@ -44,6 +61,8 @@ static void console_backspace(void)
     }
 
     input_length--;
+    input_buffer[input_length] = '\0';
+
     terminal_putchar('\b');
 }
 
@@ -83,11 +102,12 @@ static void console_execute(void)
     else if (string_equals(input_buffer, "help"))
     {
         terminal_write("Available commands:\n");
-        terminal_write("  hello - Test the shell\n");
-        terminal_write("  help  - Show this help message\n");
-        terminal_write("  clear - Clear the screen\n");
-        terminal_write("  ticks - Show timer ticks\n");
-        terminal_write("  info  - Show kernel information\n");
+        terminal_write("  hello       - Test the shell\n");
+        terminal_write("  echo <text> - Print text\n");
+        terminal_write("  help        - Show this help message\n");
+        terminal_write("  clear       - Clear the screen\n");
+        terminal_write("  ticks       - Show timer ticks\n");
+        terminal_write("  info        - Show kernel information\n");
     }
     else if (string_equals(input_buffer, "clear"))
     {
@@ -107,6 +127,11 @@ static void console_execute(void)
         terminal_write("Timer: PIT 100 Hz\n");
         terminal_write("Keyboard: IRQ1\n");
     }
+    else if (string_starts_with(input_buffer, "echo "))
+    {
+        terminal_write(input_buffer + 5);
+        terminal_putchar('\n');
+    }
     else if (input_length != 0)
     {
         terminal_write("Unknown command: ");
@@ -121,6 +146,8 @@ static void console_execute(void)
 void console_initialize(void)
 {
     input_length = 0;
+    input_buffer[0] = '\0';
+
     console_prompt();
 }
 
@@ -147,6 +174,8 @@ void console_process_input(void)
             if (input_length < CONSOLE_BUFFER_SIZE - 1)
             {
                 input_buffer[input_length++] = c;
+                input_buffer[input_length] = '\0';
+
                 terminal_putchar(c);
             }
         }
