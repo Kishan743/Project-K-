@@ -6,14 +6,35 @@ static uint8_t terminal_row;
 static uint8_t terminal_column;
 static uint8_t terminal_color;
 
+static inline void outb(uint16_t port, uint8_t value)
+{
+    __asm__ volatile (
+        "outb %0, %1"
+        :
+        : "a"(value), "Nd"(port)
+    );
+}
+
 static uint8_t vga_entry_color(vga_color_t foreground, vga_color_t background)
 {
-    return foreground | background << 4;
+    return foreground | (background << 4);
 }
 
 static uint16_t vga_entry(unsigned char character, uint8_t color)
 {
-    return (uint16_t)character | (uint16_t)color << 8;
+    return (uint16_t)character | ((uint16_t)color << 8);
+}
+
+void terminal_update_cursor(void)
+{
+    uint16_t position =
+        (uint16_t)(terminal_row * VGA_WIDTH + terminal_column);
+
+    outb(0x3D4, 0x0F);
+    outb(0x3D5, (uint8_t)(position & 0xFF));
+
+    outb(0x3D4, 0x0E);
+    outb(0x3D5, (uint8_t)((position >> 8) & 0xFF));
 }
 
 static void terminal_scroll(void)
@@ -44,6 +65,7 @@ void terminal_initialize(void)
 
     terminal_setcolor(VGA_COLOR_LIGHT_GREY, VGA_COLOR_BLACK);
     terminal_clear();
+    terminal_update_cursor();
 }
 
 void terminal_setcolor(vga_color_t foreground, vga_color_t background)
@@ -81,14 +103,12 @@ void terminal_clear(void)
 
     terminal_row = 0;
     terminal_column = 0;
+
+    terminal_update_cursor();
 }
 
 void terminal_putchar(char c)
 {
-    /*
-     * Backspace:
-     * Move one position backwards and erase the character.
-     */
     if (c == '\b')
     {
         if (terminal_column > 0)
@@ -104,13 +124,10 @@ void terminal_putchar(char c)
             );
         }
 
+        terminal_update_cursor();
         return;
     }
 
-    /*
-     * Newline:
-     * Move to the beginning of the next row.
-     */
     if (c == '\n')
     {
         terminal_column = 0;
@@ -124,12 +141,10 @@ void terminal_putchar(char c)
             terminal_scroll();
         }
 
+        terminal_update_cursor();
         return;
     }
 
-    /*
-     * Normal character.
-     */
     terminal_putentryat(
         c,
         (vga_color_t)(terminal_color & 0x0F),
@@ -140,9 +155,6 @@ void terminal_putchar(char c)
 
     terminal_column++;
 
-    /*
-     * End of line.
-     */
     if (terminal_column == VGA_WIDTH)
     {
         terminal_column = 0;
@@ -156,6 +168,8 @@ void terminal_putchar(char c)
             terminal_scroll();
         }
     }
+
+    terminal_update_cursor();
 }
 
 void terminal_write(const char* string)

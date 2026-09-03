@@ -40,4 +40,6 @@ void terminal_putentryat(char c,
 void terminal_putchar(char c);
 void terminal_write(const char* string);
 
+void terminal_update_cursor(void);
+
 #endif
