@@ -4,9 +4,14 @@
 #include "../drivers/terminal.h"
 
 #define CONSOLE_BUFFER_SIZE 128
+#define MAX_ARGUMENTS 8
 
 static char input_buffer[CONSOLE_BUFFER_SIZE];
 static unsigned int input_length;
+
+static char* command;
+static char* arguments[MAX_ARGUMENTS];
+static int argument_count;
 
 static void console_prompt(void)
 {
@@ -29,22 +34,6 @@ static int string_equals(const char* a, const char* b)
     }
 
     return *a == '\0' && *b == '\0';
-}
-
-static int string_starts_with(const char* text, const char* prefix)
-{
-    while (*prefix)
-    {
-        if (*text != *prefix)
-        {
-            return 0;
-        }
-
-        text++;
-        prefix++;
-    }
-
-    return 1;
 }
 
 static void console_clear_input(void)
@@ -89,17 +78,103 @@ static void console_print_uint(uint32_t value)
     }
 }
 
+/*
+ * Split the input into:
+ *
+ * command
+ * argument 1
+ * argument 2
+ * ...
+ *
+ * Example:
+ *
+ * echo hello world
+ *
+ * command = "echo"
+ * arguments[0] = "hello"
+ * arguments[1] = "world"
+ */
+static void console_tokenize(void)
+{
+    command = 0;
+    argument_count = 0;
+
+    char* p = input_buffer;
+
+    while (*p == ' ')
+    {
+        p++;
+    }
+
+    if (*p == '\0')
+    {
+        return;
+    }
+
+    command = p;
+
+    while (*p != '\0' && *p != ' ')
+    {
+        p++;
+    }
+
+    if (*p == '\0')
+    {
+        return;
+    }
+
+    *p = '\0';
+    p++;
+
+    while (*p != '\0' && argument_count < MAX_ARGUMENTS)
+    {
+        while (*p == ' ')
+        {
+            p++;
+        }
+
+        if (*p == '\0')
+        {
+            break;
+        }
+
+        arguments[argument_count++] = p;
+
+        while (*p != '\0' && *p != ' ')
+        {
+            p++;
+        }
+
+        if (*p == '\0')
+        {
+            break;
+        }
+
+        *p = '\0';
+        p++;
+    }
+}
+
 static void console_execute(void)
 {
     input_buffer[input_length] = '\0';
 
     terminal_putchar('\n');
 
-    if (string_equals(input_buffer, "hello"))
+    console_tokenize();
+
+    if (command == 0)
+    {
+        console_clear_input();
+        console_prompt();
+        return;
+    }
+
+    if (string_equals(command, "hello"))
     {
         terminal_write("Hello from Project K!\n");
     }
-    else if (string_equals(input_buffer, "help"))
+    else if (string_equals(command, "help"))
     {
         terminal_write("Available commands:\n");
         terminal_write("  hello       - Test the shell\n");
@@ -109,17 +184,17 @@ static void console_execute(void)
         terminal_write("  ticks       - Show timer ticks\n");
         terminal_write("  info        - Show kernel information\n");
     }
-    else if (string_equals(input_buffer, "clear"))
+    else if (string_equals(command, "clear"))
     {
         terminal_clear();
     }
-    else if (string_equals(input_buffer, "ticks"))
+    else if (string_equals(command, "ticks"))
     {
         terminal_write("Timer ticks: ");
         console_print_uint(timer_get_ticks());
         terminal_putchar('\n');
     }
-    else if (string_equals(input_buffer, "info"))
+    else if (string_equals(command, "info"))
     {
         terminal_write("Project K Kernel\n");
         terminal_write("Architecture: i386\n");
@@ -127,15 +202,24 @@ static void console_execute(void)
         terminal_write("Timer: PIT 100 Hz\n");
         terminal_write("Keyboard: IRQ1\n");
     }
-    else if (string_starts_with(input_buffer, "echo "))
+    else if (string_equals(command, "echo"))
     {
-        terminal_write(input_buffer + 5);
+        for (int i = 0; i < argument_count; i++)
+        {
+            if (i > 0)
+            {
+                terminal_putchar(' ');
+            }
+
+            terminal_write(arguments[i]);
+        }
+
         terminal_putchar('\n');
     }
-    else if (input_length != 0)
+    else
     {
         terminal_write("Unknown command: ");
-        terminal_write(input_buffer);
+        terminal_write(command);
         terminal_write("\n");
     }
 
