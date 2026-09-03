@@ -30,22 +30,20 @@ void kernel_main(void)
     terminal_setcolor(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK);
     terminal_write("GDT initialized successfully.\n");
     terminal_write("IDT initialized successfully.\n");
+    terminal_write("Timer initialized at 100 Hz.\n");
 
-    terminal_setcolor(VGA_COLOR_LIGHT_GREY, VGA_COLOR_BLACK);
-    terminal_write("Kernel boot successful.\n");
+    terminal_write("Sleeping for 1 second...\n");
+    timer_sleep(100);
+    terminal_write("1 second elapsed.\n");
 
-    uint32_t last_ticks = 0;
+    terminal_write("Sleeping for 2 seconds...\n");
+    timer_sleep(200);
+    terminal_write("2 seconds elapsed.\n");
+
+    terminal_write("Timer sleep test successful.\n");
 
     while (1)
     {
         __asm__ volatile ("hlt");
-
-        uint32_t current_ticks = timer_get_ticks();
-
-        if (current_ticks != last_ticks)
-        {
-            last_ticks = current_ticks;
-            terminal_write("TICK\n");
-        }
     }
 }
