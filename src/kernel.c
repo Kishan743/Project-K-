@@ -3,6 +3,7 @@
 #include "kernel/idt.h"
 #include "kernel/pic.h"
 #include "kernel/timer.h"
+#include "kernel/keyboard.h"
 
 void kernel_main(void)
 {
@@ -23,7 +24,10 @@ void kernel_main(void)
     idt_initialize();
 
     timer_initialize(100);
+    keyboard_initialize();
+
     pic_clear_mask(0);
+    pic_clear_mask(1);
 
     __asm__ volatile ("sti");
 
@@ -31,16 +35,7 @@ void kernel_main(void)
     terminal_write("GDT initialized successfully.\n");
     terminal_write("IDT initialized successfully.\n");
     terminal_write("Timer initialized at 100 Hz.\n");
-
-    terminal_write("Sleeping for 1 second...\n");
-    timer_sleep(100);
-    terminal_write("1 second elapsed.\n");
-
-    terminal_write("Sleeping for 2 seconds...\n");
-    timer_sleep(200);
-    terminal_write("2 seconds elapsed.\n");
-
-    terminal_write("Timer sleep test successful.\n");
+    terminal_write("Keyboard IRQ1 initialized.\n");
 
     while (1)
     {

@@ -1,6 +1,7 @@
 #include "idt.h"
 #include "../drivers/terminal.h"
 #include "timer.h"
+#include "keyboard.h"
 #include "pic.h"
 extern void idt_flush(uint32_t);
 
@@ -186,6 +187,10 @@ void irq_handler(struct interrupt_frame* frame)
     if (irq == 0)
     {
         timer_handler();
+    }
+    else if (irq == 1)
+    {
+        keyboard_handler();
     }
 
     pic_send_eoi((uint8_t)irq);
