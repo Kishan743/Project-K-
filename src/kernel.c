@@ -36,9 +36,20 @@ void kernel_main(void)
     terminal_write("IDT initialized successfully.\n");
     terminal_write("Timer initialized at 100 Hz.\n");
     terminal_write("Keyboard IRQ1 initialized.\n");
+    terminal_write("Keyboard input buffer initialized.\n");
 
     while (1)
     {
         __asm__ volatile ("hlt");
+
+        /*
+         * Process characters collected by IRQ1.
+         */
+        while (keyboard_has_input())
+        {
+            char c = keyboard_getchar();
+
+            terminal_putchar(c);
+        }
     }
 }
