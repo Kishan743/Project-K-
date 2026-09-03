@@ -45,6 +45,10 @@ build/timer.o: src/kernel/timer.c src/kernel/timer.h
 	mkdir -p build
 	$(CC) $(CFLAGS) -c src/kernel/timer.c -o build/timer.o
 
+build/console.o: src/kernel/console.c src/kernel/console.h src/kernel/keyboard.h src/drivers/terminal.h
+	mkdir -p build
+	$(CC) $(CFLAGS) -c src/kernel/console.c -o build/console.o
+
 build/keyboard.o: src/kernel/keyboard.c src/kernel/keyboard.h
 	mkdir -p build
 	$(CC) $(CFLAGS) -c src/kernel/keyboard.c -o build/keyboard.o
@@ -61,9 +65,9 @@ build/isr.o: src/kernel/isr.asm
 	mkdir -p build
 	$(AS) $(ASFLAGS) src/kernel/isr.asm -o build/isr.o
 
-$(KERNEL): build/boot.o build/kernel.o build/terminal.o build/gdt.o build/gdt_flush.o build/pic.o build/pit.o build/timer.o build/keyboard.o build/idt.o build/idt_flush.o build/isr.o linker.ld
+$(KERNEL): build/boot.o build/kernel.o build/terminal.o build/gdt.o build/gdt_flush.o build/pic.o build/pit.o build/timer.o build/keyboard.o build/console.o build/idt.o build/idt_flush.o build/isr.o linker.ld
 	mkdir -p build
-	$(LD) $(LDFLAGS) -o $(KERNEL) build/boot.o build/kernel.o build/terminal.o build/gdt.o build/gdt_flush.o build/pic.o build/pit.o build/timer.o build/keyboard.o build/idt.o build/idt_flush.o build/isr.o
+	$(LD) $(LDFLAGS) -o $(KERNEL) build/boot.o build/kernel.o build/terminal.o build/gdt.o build/gdt_flush.o build/pic.o build/pit.o build/timer.o build/keyboard.o build/console.o build/idt.o build/idt_flush.o build/isr.o
 
 iso: $(KERNEL)
 	mkdir -p iso/boot/grub

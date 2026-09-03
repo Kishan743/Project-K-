@@ -4,13 +4,14 @@
 #include "kernel/pic.h"
 #include "kernel/timer.h"
 #include "kernel/keyboard.h"
+#include "kernel/console.h"
 
 void kernel_main(void)
 {
     terminal_initialize();
 
     terminal_setcolor(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK);
-    terminal_write("PROJECT K - KERNEL K v0.4\n");
+    terminal_write("PROJECT K - KERNEL K v0.5\n");
 
     terminal_setcolor(VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK);
     terminal_write("-------------------------\n");
@@ -37,19 +38,14 @@ void kernel_main(void)
     terminal_write("Timer initialized at 100 Hz.\n");
     terminal_write("Keyboard IRQ1 initialized.\n");
     terminal_write("Keyboard input buffer initialized.\n");
+    terminal_write("Console initialized.\n\n");
+
+    console_initialize();
 
     while (1)
     {
         __asm__ volatile ("hlt");
 
-        /*
-         * Process characters collected by IRQ1.
-         */
-        while (keyboard_has_input())
-        {
-            char c = keyboard_getchar();
-
-            terminal_putchar(c);
-        }
+        console_process_input();
     }
 }
