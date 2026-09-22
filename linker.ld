@@ -4,9 +4,12 @@ SECTIONS
 {
     . = 1M;
 
+    __kernel_start = .;
+
     .text : ALIGN(4K)
     {
         KEEP(*(.multiboot))
+        KEEP(*(.multiboot2))
         *(.text)
     }
 
@@ -25,4 +28,7 @@ SECTIONS
         *(COMMON)
         *(.bss)
     }
+
+    . = ALIGN(4K);
+    __kernel_end = .;
 }

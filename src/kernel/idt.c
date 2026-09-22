@@ -152,7 +152,22 @@ void exception_handler(struct interrupt_frame* frame)
     }
     else if (frame->interrupt_number == 14)
     {
+        uint32_t fault_address;
+
+        __asm__ volatile (
+            "mov %%cr2, %0"
+            : "=r"(fault_address)
+        );
+
         terminal_write("PAGE FAULT\n");
+
+        terminal_write("CR2: ");
+        terminal_write_hex(fault_address);
+        terminal_write("\n");
+
+        terminal_write("Error code: ");
+        terminal_write_hex(frame->error_code);
+        terminal_write("\n");
     }
     else if (frame->interrupt_number == 16)
     {

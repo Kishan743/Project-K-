@@ -1,17 +1,14 @@
 #include "console.h"
 #include "keyboard.h"
 #include "timer.h"
+#include "pmm.h"
+#include "heap.h"
 #include "../drivers/terminal.h"
 
 #define CONSOLE_BUFFER_SIZE 128
-#define MAX_ARGUMENTS 8
 
 static char input_buffer[CONSOLE_BUFFER_SIZE];
 static unsigned int input_length;
-
-static char* command;
-static char* arguments[MAX_ARGUMENTS];
-static int argument_count;
 
 static void console_prompt(void)
 {
@@ -25,9 +22,7 @@ static int string_equals(const char* a, const char* b)
     while (*a && *b)
     {
         if (*a != *b)
-        {
             return 0;
-        }
 
         a++;
         b++;
@@ -39,19 +34,14 @@ static int string_equals(const char* a, const char* b)
 static void console_clear_input(void)
 {
     input_length = 0;
-    input_buffer[0] = '\0';
 }
 
 static void console_backspace(void)
 {
     if (input_length == 0)
-    {
         return;
-    }
 
     input_length--;
-    input_buffer[input_length] = '\0';
-
     terminal_putchar('\b');
 }
 
@@ -73,86 +63,7 @@ static void console_print_uint(uint32_t value)
     }
 
     while (i > 0)
-    {
         terminal_putchar(buffer[--i]);
-    }
-}
-
-/*
- * Split the input into:
- *
- * command
- * argument 1
- * argument 2
- * ...
- *
- * Example:
- *
- * echo hello world
- *
- * command = "echo"
- * arguments[0] = "hello"
- * arguments[1] = "world"
- */
-static void console_tokenize(void)
-{
-    command = 0;
-    argument_count = 0;
-
-    char* p = input_buffer;
-
-    while (*p == ' ')
-    {
-        p++;
-    }
-
-    if (*p == '\0')
-    {
-        return;
-    }
-
-    command = p;
-
-    while (*p != '\0' && *p != ' ')
-    {
-        p++;
-    }
-
-    if (*p == '\0')
-    {
-        return;
-    }
-
-    *p = '\0';
-    p++;
-
-    while (*p != '\0' && argument_count < MAX_ARGUMENTS)
-    {
-        while (*p == ' ')
-        {
-            p++;
-        }
-
-        if (*p == '\0')
-        {
-            break;
-        }
-
-        arguments[argument_count++] = p;
-
-        while (*p != '\0' && *p != ' ')
-        {
-            p++;
-        }
-
-        if (*p == '\0')
-        {
-            break;
-        }
-
-        *p = '\0';
-        p++;
-    }
 }
 
 static void console_execute(void)
@@ -161,40 +72,59 @@ static void console_execute(void)
 
     terminal_putchar('\n');
 
-    console_tokenize();
-
-    if (command == 0)
-    {
-        console_clear_input();
-        console_prompt();
-        return;
-    }
-
-    if (string_equals(command, "hello"))
+    if (string_equals(input_buffer, "hello"))
     {
         terminal_write("Hello from Project K!\n");
     }
-    else if (string_equals(command, "help"))
+    else if (string_equals(input_buffer, "help"))
     {
         terminal_write("Available commands:\n");
-        terminal_write("  hello       - Test the shell\n");
-        terminal_write("  echo <text> - Print text\n");
-        terminal_write("  help        - Show this help message\n");
-        terminal_write("  clear       - Clear the screen\n");
-        terminal_write("  ticks       - Show timer ticks\n");
-        terminal_write("  info        - Show kernel information\n");
+        terminal_write("  hello - Test the shell\n");
+        terminal_write("  help  - Show this help message\n");
+        terminal_write("  clear - Clear the screen\n");
+        terminal_write("  ticks - Show timer ticks\n");
+        terminal_write("  info  - Show kernel information\n");
+        terminal_write("  memory - Show physical memory status\n");
+        terminal_write("  alloc - Allocate one physical frame\n");
+        terminal_write("  malloc - Allocate kernel heap memory\n");
+        terminal_write("  heap - Show kernel heap status\n");
     }
-    else if (string_equals(command, "clear"))
+    else if (string_equals(input_buffer, "clear"))
     {
         terminal_clear();
     }
-    else if (string_equals(command, "ticks"))
+    else if (string_equals(input_buffer, "ticks"))
     {
         terminal_write("Timer ticks: ");
         console_print_uint(timer_get_ticks());
         terminal_putchar('\n');
     }
-    else if (string_equals(command, "info"))
+    else if (string_equals(input_buffer, "heap"))
+    {
+        terminal_write("Kernel Heap\n");
+
+        terminal_write("Used: ");
+        console_print_uint(heap_get_used());
+        terminal_write(" bytes\n");
+
+        terminal_write("Free: ");
+        console_print_uint(heap_get_free());
+        terminal_write(" bytes\n");
+    }
+    else if (string_equals(input_buffer, "malloc"))
+    {
+        void* memory = kmalloc(64);
+
+        if (memory != 0)
+        {
+            terminal_write("kmalloc(64) successful\n");
+        }
+        else
+        {
+            terminal_write("kmalloc failed\n");
+        }
+    }
+    else if (string_equals(input_buffer, "info"))
     {
         terminal_write("Project K Kernel\n");
         terminal_write("Architecture: i386\n");
@@ -202,25 +132,51 @@ static void console_execute(void)
         terminal_write("Timer: PIT 100 Hz\n");
         terminal_write("Keyboard: IRQ1\n");
     }
-    else if (string_equals(command, "echo"))
+    else if (string_equals(input_buffer, "memory"))
     {
-        for (int i = 0; i < argument_count; i++)
-        {
-            if (i > 0)
-            {
-                terminal_putchar(' ');
-            }
+        terminal_write("Physical Memory Manager\n");
 
-            terminal_write(arguments[i]);
-        }
+        terminal_write("Total frames: ");
+        console_print_uint(pmm_get_total_frames());
+        terminal_putchar('\n');
 
+        terminal_write("Free frames: ");
+        console_print_uint(pmm_get_free_frames());
         terminal_putchar('\n');
     }
-    else
+    else if (string_equals(input_buffer, "alloc"))
+    {
+        void* frame = pmm_alloc_frame();
+
+        if (frame != 0)
+        {
+            terminal_write("Allocated frame at address 0x");
+            
+            uint32_t address = (uint32_t)frame;
+            char hex[9];
+            const char* digits = "0123456789ABCDEF";
+
+            for (int i = 7; i >= 0; i--)
+            {
+                hex[i] = digits[address & 0xF];
+                address >>= 4;
+            }
+
+            for (int i = 0; i < 8; i++)
+                terminal_putchar(hex[i]);
+
+            terminal_putchar('\n');
+        }
+        else
+        {
+            terminal_write("No free physical frames.\n");
+        }
+    }
+    else if (input_length != 0)
     {
         terminal_write("Unknown command: ");
-        terminal_write(command);
-        terminal_write("\n");
+        terminal_write(input_buffer);
+        terminal_putchar('\n');
     }
 
     console_clear_input();
@@ -230,8 +186,6 @@ static void console_execute(void)
 void console_initialize(void)
 {
     input_length = 0;
-    input_buffer[0] = '\0';
-
     console_prompt();
 }
 
@@ -258,8 +212,6 @@ void console_process_input(void)
             if (input_length < CONSOLE_BUFFER_SIZE - 1)
             {
                 input_buffer[input_length++] = c;
-                input_buffer[input_length] = '\0';
-
                 terminal_putchar(c);
             }
         }
