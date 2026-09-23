@@ -41,7 +41,10 @@ static uint16_t vga_entry(
 void terminal_update_cursor(void)
 {
     if (framebuffer_is_available())
+    {
+        framebuffer_cursor_refresh();
         return;
+    }
 
     uint16_t position =
         terminal_row * VGA_WIDTH +

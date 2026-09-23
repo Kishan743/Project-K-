@@ -43,6 +43,14 @@ void framebuffer_setcolor(
     uint32_t background
 );
 
+/* Graphical terminal cursor */
+void framebuffer_cursor_show(void);
+void framebuffer_cursor_hide(void);
+void framebuffer_cursor_refresh(void);
+
+uint32_t framebuffer_get_cursor_x(void);
+uint32_t framebuffer_get_cursor_y(void);
+
 uint32_t framebuffer_get_width(void);
 uint32_t framebuffer_get_height(void);
 uint32_t framebuffer_get_pitch(void);

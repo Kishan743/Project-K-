@@ -7,6 +7,7 @@ static framebuffer_info_t framebuffer;
 
 static uint32_t cursor_x;
 static uint32_t cursor_y;
+static uint8_t cursor_visible;
 
 static uint32_t foreground_color = 0x00FFFFFF;
 static uint32_t background_color = 0x00101828;
@@ -221,14 +222,92 @@ int framebuffer_initialize(uint32_t multiboot_info)
 
     cursor_x = 0;
     cursor_y = 0;
+    cursor_visible = 1;
 
     return 0;
+}
+
+static void draw_cursor(void)
+{
+    if (!framebuffer.initialized || !cursor_visible)
+        return;
+
+    if (cursor_x >= framebuffer.width ||
+        cursor_y >= framebuffer.height)
+        return;
+
+    uint32_t cursor_height = 2;
+
+    if (cursor_y + cursor_height > framebuffer.height)
+        cursor_height = framebuffer.height - cursor_y;
+
+    framebuffer_fill_rect(
+        cursor_x,
+        cursor_y + CHAR_HEIGHT - cursor_height,
+        CHAR_WIDTH,
+        cursor_height,
+        foreground_color
+    );
+}
+
+static void erase_cursor(void)
+{
+    if (!framebuffer.initialized || !cursor_visible)
+        return;
+
+    if (cursor_x >= framebuffer.width ||
+        cursor_y >= framebuffer.height)
+        return;
+
+    framebuffer_fill_rect(
+        cursor_x,
+        cursor_y + CHAR_HEIGHT - 2,
+        CHAR_WIDTH,
+        2,
+        background_color
+    );
+}
+
+void framebuffer_cursor_show(void)
+{
+    cursor_visible = 1;
+    draw_cursor();
+}
+
+void framebuffer_cursor_hide(void)
+{
+    erase_cursor();
+    cursor_visible = 0;
+}
+
+void framebuffer_cursor_refresh(void)
+{
+    if (!framebuffer.initialized)
+        return;
+
+    if (cursor_visible)
+    {
+        erase_cursor();
+        draw_cursor();
+    }
+}
+
+uint32_t framebuffer_get_cursor_x(void)
+{
+    return cursor_x;
+}
+
+uint32_t framebuffer_get_cursor_y(void)
+{
+    return cursor_y;
 }
 
 void framebuffer_clear(uint32_t color)
 {
     if (!framebuffer.initialized)
         return;
+
+    cursor_visible = 0;
 
     framebuffer_fill_rect(
         0,
@@ -240,6 +319,9 @@ void framebuffer_clear(uint32_t color)
 
     cursor_x = 0;
     cursor_y = 0;
+
+    cursor_visible = 1;
+    draw_cursor();
 }
 
 void framebuffer_putpixel(
@@ -279,10 +361,15 @@ void framebuffer_fill_rect(
         y >= framebuffer.height)
         return;
 
-    if (y + height > framebuffer.height)
+    /*
+     * Use subtraction-based bounds checks instead of
+     * x + width / y + height comparisons.
+     * This avoids unsigned integer overflow.
+     */
+    if (height > framebuffer.height - y)
         height = framebuffer.height - y;
 
-    if (x + width > framebuffer.width)
+    if (width > framebuffer.width - x)
         width = framebuffer.width - x;
 
     for (uint32_t py = 0;
@@ -308,6 +395,9 @@ static void scroll(void)
 {
     if (!framebuffer.initialized)
         return;
+
+    uint8_t was_visible = cursor_visible;
+    cursor_visible = 0;
 
     uint32_t line_height = CHAR_HEIGHT;
 
@@ -353,6 +443,11 @@ static void scroll(void)
         cursor_y -= line_height;
     else
         cursor_y = 0;
+
+    cursor_visible = was_visible;
+
+    if (cursor_visible)
+        draw_cursor();
 }
 
 static void newline(void)
@@ -540,38 +635,53 @@ void framebuffer_putchar(char c)
     if (!framebuffer.initialized)
         return;
 
+    /*
+     * The cursor is part of the terminal presentation layer.
+     * Hide it before changing the underlying character cell.
+     */
+    erase_cursor();
+
     if (c == '\n')
     {
         newline();
+        draw_cursor();
         return;
     }
 
     if (c == '\r')
     {
         cursor_x = 0;
+        draw_cursor();
         return;
     }
 
     if (c == '\b')
     {
         if (cursor_x >= CHAR_WIDTH)
+        {
             cursor_x -= CHAR_WIDTH;
 
-        framebuffer_fill_rect(
-            cursor_x,
-            cursor_y,
-            CHAR_WIDTH,
-            CHAR_HEIGHT,
-            background_color
-        );
+            framebuffer_fill_rect(
+                cursor_x,
+                cursor_y,
+                CHAR_WIDTH,
+                CHAR_HEIGHT,
+                background_color
+            );
+        }
 
+        draw_cursor();
         return;
     }
 
-    if (cursor_x + CHAR_WIDTH >
-        framebuffer.width)
+    if (cursor_x + CHAR_WIDTH > framebuffer.width)
     {
         newline();
+    }
+
+    if (cursor_y + CHAR_HEIGHT > framebuffer.height)
+    {
+        scroll();
     }
 
     draw_glyph(
@@ -581,6 +691,17 @@ void framebuffer_putchar(char c)
     );
 
     cursor_x += CHAR_WIDTH;
+
+    /*
+     * If the character ended exactly at the right edge,
+     * move to the next line on the following operation.
+     */
+    if (cursor_x + CHAR_WIDTH > framebuffer.width)
+    {
+        newline();
+    }
+
+    draw_cursor();
 }
 
 void framebuffer_write(const char* string)
@@ -602,6 +723,8 @@ void framebuffer_setcolor(
 {
     foreground_color = foreground;
     background_color = background;
+
+    framebuffer_cursor_refresh();
 }
 
 uint32_t framebuffer_get_width(void)
