@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 
+#include "task.h"
+
 struct interrupt_frame
 {
     uint32_t interrupt_number;
@@ -11,8 +13,13 @@ struct interrupt_frame
 
 void idt_initialize(void);
 
-void exception_handler(struct interrupt_frame* frame);
-void irq_handler(struct interrupt_frame* frame);
+void exception_handler(
+    struct interrupt_frame* frame
+);
+
+cpu_context_t* irq_handler(
+    cpu_context_t* frame
+);
 
 extern volatile uint32_t timer_ticks;
 

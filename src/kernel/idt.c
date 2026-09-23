@@ -3,6 +3,7 @@
 #include "timer.h"
 #include "keyboard.h"
 #include "pic.h"
+#include "task.h"
 extern void idt_flush(uint32_t);
 
 extern void isr0(void);
@@ -195,9 +196,10 @@ void exception_handler(struct interrupt_frame* frame)
         __asm__ volatile ("cli; hlt");
 }
 }
-void irq_handler(struct interrupt_frame* frame)
+cpu_context_t* irq_handler(cpu_context_t* frame)
 {
-    uint32_t irq = frame->interrupt_number - 32;
+    uint32_t irq =
+        frame->interrupt_number - 32;
 
     if (irq == 0)
     {
@@ -208,7 +210,22 @@ void irq_handler(struct interrupt_frame* frame)
         keyboard_handler();
     }
 
+    /*
+     * Acknowledge the hardware interrupt before selecting
+     * the next task.
+     */
     pic_send_eoi((uint8_t)irq);
+
+    /*
+     * Only IRQ0 drives preemptive scheduling.
+     *
+     * Other hardware IRQs return to the same task that
+     * was interrupted.
+     */
+    if (irq == 0)
+        return task_schedule(frame);
+
+    return frame;
 }
 void idt_initialize(void)
 {

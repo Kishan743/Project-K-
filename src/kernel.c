@@ -113,52 +113,31 @@ static void show_multiboot_info(uint32_t magic,
 
 
 
+
 static void task_demo_a(void* argument)
 {
     (void)argument;
 
-    for (uint32_t i = 1; i <= 5; i++)
+    while (1)
     {
-        terminal_setcolor(
-            VGA_COLOR_LIGHT_GREEN,
-            VGA_COLOR_BLACK
-        );
+        task_t* task =
+            task_get_current();
 
-        terminal_write("TASK A: iteration ");
-        print_uint(i);
-        terminal_putchar('\n');
-
-        task_yield();
+        task->work_counter++;
     }
-
-    terminal_setcolor(
-        VGA_COLOR_LIGHT_GREY,
-        VGA_COLOR_BLACK
-    );
 }
 
 static void task_demo_b(void* argument)
 {
     (void)argument;
 
-    for (uint32_t i = 1; i <= 5; i++)
+    while (1)
     {
-        terminal_setcolor(
-            VGA_COLOR_LIGHT_CYAN,
-            VGA_COLOR_BLACK
-        );
+        task_t* task =
+            task_get_current();
 
-        terminal_write("TASK B: iteration ");
-        print_uint(i);
-        terminal_putchar('\n');
-
-        task_yield();
+        task->work_counter++;
     }
-
-    terminal_setcolor(
-        VGA_COLOR_LIGHT_GREY,
-        VGA_COLOR_BLACK
-    );
 }
 
 static void test_tasks(void)
@@ -169,7 +148,7 @@ static void test_tasks(void)
     );
 
     terminal_write(
-        "\nTask Management / Context Switching\n"
+        "\nPreemptive Task Scheduler\n"
     );
 
     terminal_setcolor(
@@ -203,28 +182,7 @@ static void test_tasks(void)
     terminal_putchar('\n');
 
     terminal_write(
-        "Starting cooperative task switch test...\n"
-    );
-
-    /*
-     * Give the newly created tasks execution time.
-     * Each task yields after every iteration.
-     */
-    for (uint32_t i = 0; i < 12; i++)
-        task_yield();
-
-    terminal_setcolor(
-        VGA_COLOR_LIGHT_GREEN,
-        VGA_COLOR_BLACK
-    );
-
-    terminal_write(
-        "Context switching test returned to kernel.\n"
-    );
-
-    terminal_setcolor(
-        VGA_COLOR_LIGHT_GREY,
-        VGA_COLOR_BLACK
+        "Preemptive scheduler ready.\n"
     );
 }
 
@@ -423,8 +381,6 @@ void kernel_main(uint32_t multiboot_magic,
 
     test_heap();
 
-    test_tasks();
-
     /*
      * CPU and interrupt subsystem.
      */
@@ -447,8 +403,6 @@ void kernel_main(uint32_t multiboot_magic,
 
     pic_clear_mask(0);
     pic_clear_mask(1);
-
-    __asm__ volatile ("sti");
 
     terminal_setcolor(
         VGA_COLOR_LIGHT_GREEN,
@@ -483,6 +437,8 @@ void kernel_main(uint32_t multiboot_magic,
     terminal_write(
         "Console initialized.\n"
     );
+
+    test_tasks();
 
     /*
      * Final system status.
@@ -520,6 +476,12 @@ void kernel_main(uint32_t multiboot_magic,
     terminal_write(
         "Waiting for input...\n\n"
     );
+
+    /*
+     * Enable hardware interrupts only after the complete
+     * scheduler/task environment is ready.
+     */
+    __asm__ volatile ("sti");
 
     /*
      * Main kernel loop.

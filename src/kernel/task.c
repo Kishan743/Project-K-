@@ -1,11 +1,5 @@
 #include "task.h"
 #include "heap.h"
-#include "../drivers/terminal.h"
-
-extern void context_switch(
-    uint32_t* old_esp,
-    uint32_t new_esp
-);
 
 static task_t tasks[TASK_MAX];
 
@@ -21,34 +15,8 @@ static void task_bootstrap(void)
 
     task_exit();
 
-    /*
-     * task_exit() should never return.
-     * Keep the CPU here if something goes wrong.
-     */
     while (1)
         __asm__ volatile ("hlt");
-}
-
-static int find_next_task(void)
-{
-    if (current_task == 0)
-        return -1;
-
-    uint32_t current_index =
-        current_task->id;
-
-    for (uint32_t offset = 1;
-         offset < TASK_MAX;
-         offset++)
-    {
-        uint32_t index =
-            (current_index + offset) % TASK_MAX;
-
-        if (tasks[index].state == TASK_READY)
-            return (int)index;
-    }
-
-    return -1;
 }
 
 void task_initialize(void)
@@ -63,16 +31,20 @@ void task_initialize(void)
         tasks[i].entry = 0;
         tasks[i].argument = 0;
         tasks[i].stack = 0;
+        tasks[i].switches = 0;
+        tasks[i].work_counter = 0;
     }
 
     /*
-     * Task 0 represents the existing kernel execution
-     * context. Its stack pointer is captured the first
-     * time task_yield() switches away from it.
+     * Task 0 is the existing kernel execution context.
+     *
+     * Its real CPU context will be captured automatically
+     * the first time IRQ0 fires.
      */
     tasks[0].state = TASK_RUNNING;
 
     current_task = &tasks[0];
+
     task_count = 1;
 }
 
@@ -108,53 +80,100 @@ int task_create(
         return -1;
 
     /*
-     * Start at the top of the allocated stack.
-     * Keep it 16-byte aligned.
+     * Stack grows downward.
+     *
+     * We construct exactly the context that irq_common
+     * expects after PUSHA.
      */
     uint32_t stack_top =
-        ((uint32_t)stack +
-         TASK_STACK_SIZE) & ~0x0F;
+        ((uint32_t)stack + TASK_STACK_SIZE) & ~0x0F;
 
-    /*
-     * context_switch() expects this layout:
-     *
-     * ESP -> saved EDI
-     *        saved ESI
-     *        saved EBX
-     *        saved EBP
-     *        return address
-     */
-    uint32_t* initial_stack =
+    uint32_t* sp =
         (uint32_t*)stack_top;
 
-    *(--initial_stack) =
-        (uint32_t)task_bootstrap; /* return EIP */
+    /*
+     * iret frame.
+     */
+    *(--sp) = 0x00000202;       /* EFLAGS: IF enabled */
+    *(--sp) = 0x00000008;       /* CS: kernel code */
+    *(--sp) = (uint32_t)task_bootstrap;
 
-    *(--initial_stack) = 0; /* EBP */
-    *(--initial_stack) = 0; /* EBX */
-    *(--initial_stack) = 0; /* ESI */
-    *(--initial_stack) = 0; /* EDI */
+    /*
+     * Software-created interrupt metadata.
+     */
+    *(--sp) = 0;                /* error code */
+    *(--sp) = 32;               /* IRQ0 vector */
+
+    /*
+     * PUSHA frame.
+     *
+     * popa restores:
+     * EDI, ESI, EBP, skips ESP,
+     * EBX, EDX, ECX, EAX
+     */
+    *(--sp) = 0;                /* EAX */
+    *(--sp) = 0;                /* ECX */
+    *(--sp) = 0;                /* EDX */
+    *(--sp) = 0;                /* EBX */
+    *(--sp) = 0;                /* saved ESP */
+    *(--sp) = 0;                /* EBP */
+    *(--sp) = 0;                /* ESI */
+    *(--sp) = 0;                /* EDI */
 
     tasks[slot].id = slot;
-    tasks[slot].esp =
-        (uint32_t)initial_stack;
+    tasks[slot].esp = (uint32_t)sp;
     tasks[slot].state = TASK_READY;
     tasks[slot].entry = entry;
     tasks[slot].argument = argument;
     tasks[slot].stack = stack;
+    tasks[slot].switches = 0;
+    tasks[slot].work_counter = 0;
 
     task_count++;
 
     return (int)slot;
 }
 
-void task_yield(void)
+static int find_next_ready_task(void)
 {
+    if (current_task == 0)
+        return -1;
+
+    uint32_t current_id =
+        current_task->id;
+
+    for (uint32_t offset = 1;
+         offset < TASK_MAX;
+         offset++)
+    {
+        uint32_t index =
+            (current_id + offset) % TASK_MAX;
+
+        if (tasks[index].state == TASK_READY)
+            return (int)index;
+    }
+
+    return -1;
+}
+
+cpu_context_t* task_schedule(
+    cpu_context_t* current_context
+)
+{
+    if (current_task == 0)
+        return current_context;
+
+    /*
+     * Save the interrupted task's current CPU context.
+     */
+    current_task->esp =
+        (uint32_t)current_context;
+
     int next_index =
-        find_next_task();
+        find_next_ready_task();
 
     if (next_index < 0)
-        return;
+        return current_context;
 
     task_t* previous =
         current_task;
@@ -163,14 +182,13 @@ void task_yield(void)
         &tasks[next_index];
 
     previous->state = TASK_READY;
+
     next->state = TASK_RUNNING;
+    next->switches++;
 
     current_task = next;
 
-    context_switch(
-        &previous->esp,
-        next->esp
-    );
+    return (cpu_context_t*)next->esp;
 }
 
 void task_exit(void)
@@ -185,51 +203,11 @@ void task_exit(void)
         task_count--;
 
     /*
-     * Select another runnable task.
+     * The timer interrupt will eventually notice that this
+     * task is no longer READY and switch away from it.
+     *
+     * Do not free this task's stack while running on it.
      */
-    int next_index = -1;
-
-    for (uint32_t i = 0;
-         i < TASK_MAX;
-         i++)
-    {
-        if (&tasks[i] == current_task)
-            continue;
-
-        if (tasks[i].state == TASK_READY ||
-            tasks[i].state == TASK_RUNNING)
-        {
-            next_index = (int)i;
-            break;
-        }
-    }
-
-    if (next_index < 0)
-    {
-        /*
-         * No other task exists.
-         */
-        while (1)
-            __asm__ volatile ("hlt");
-    }
-
-    task_t* next =
-        &tasks[next_index];
-
-    next->state = TASK_RUNNING;
-    current_task = next;
-
-    /*
-     * There is no useful return address for a
-     * terminated task. Switch directly.
-     */
-    uint32_t ignored_esp = 0;
-
-    context_switch(
-        &ignored_esp,
-        next->esp
-    );
-
     while (1)
         __asm__ volatile ("hlt");
 }
@@ -247,7 +225,12 @@ uint32_t task_get_count(void)
     return task_count;
 }
 
-const task_t* task_get_current(void)
+task_t* task_get_current(void)
 {
     return current_task;
+}
+
+const task_t* task_get_table(void)
+{
+    return tasks;
 }

@@ -37,6 +37,7 @@ global isr28
 global isr29
 global isr30
 global isr31
+
 global irq0
 global irq1
 global irq2
@@ -208,6 +209,7 @@ isr31:
     push 31
     jmp isr_common
 
+
 irq0:
     push 0
     push 32
@@ -288,13 +290,27 @@ irq15:
     push 47
     jmp irq_common
 
+
+
 irq_common:
+    pusha
+
     mov eax, esp
     push eax
     call irq_handler
     add esp, 4
+
+    
+    mov esp, eax
+
+    popa
+
+    
     add esp, 8
+
     iretd
+
+
 
 isr_common:
     mov eax, esp
@@ -303,5 +319,6 @@ isr_common:
     add esp, 4
     add esp, 8
     iretd
+
 
 section .note.GNU-stack noalloc noexec nowrite progbits

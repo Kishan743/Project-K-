@@ -3,6 +3,7 @@
 #include "timer.h"
 #include "pmm.h"
 #include "heap.h"
+#include "task.h"
 #include "../drivers/terminal.h"
 
 #define CONSOLE_BUFFER_SIZE 128
@@ -88,6 +89,7 @@ static void console_execute(void)
         terminal_write("  alloc - Allocate one physical frame\n");
         terminal_write("  malloc - Allocate kernel heap memory\n");
         terminal_write("  heap - Show kernel heap status\n");
+        terminal_write("  tasks - Show scheduler task status\n");
     }
     else if (string_equals(input_buffer, "clear"))
     {
@@ -110,6 +112,43 @@ static void console_execute(void)
         terminal_write("Free: ");
         console_print_uint(heap_get_free());
         terminal_write(" bytes\n");
+    }
+    else if (string_equals(input_buffer, "tasks"))
+    {
+        const task_t* tasks =
+            task_get_table();
+
+        terminal_write("Task Scheduler\n");
+
+        for (uint32_t i = 0;
+             i < TASK_MAX;
+             i++)
+        {
+            if (tasks[i].state == TASK_UNUSED)
+                continue;
+
+            terminal_write("Task ");
+            console_print_uint(tasks[i].id);
+
+            terminal_write(" - ");
+
+            if (tasks[i].state == TASK_READY)
+                terminal_write("READY");
+            else if (tasks[i].state == TASK_RUNNING)
+                terminal_write("RUNNING");
+            else if (tasks[i].state == TASK_TERMINATED)
+                terminal_write("TERMINATED");
+            else
+                terminal_write("UNKNOWN");
+
+            terminal_write(" | switches: ");
+            console_print_uint(tasks[i].switches);
+
+            terminal_write(" | work: ");
+            console_print_uint(tasks[i].work_counter);
+
+            terminal_putchar('\n');
+        }
     }
     else if (string_equals(input_buffer, "malloc"))
     {
