@@ -81,9 +81,17 @@ build/paging.o: src/kernel/paging.c src/kernel/paging.h
 	mkdir -p build
 	$(CC) $(CFLAGS) -c src/kernel/paging.c -o build/paging.o
 
-$(KERNEL): build/boot.o build/kernel.o build/terminal.o build/gdt.o build/gdt_flush.o build/pic.o build/pit.o build/timer.o build/keyboard.o build/console.o build/pmm.o build/heap.o build/idt.o build/idt_flush.o build/isr.o build/paging.o build/framebuffer.o linker.ld
+build/task.o: src/kernel/task.c src/kernel/task.h src/kernel/heap.h
 	mkdir -p build
-	$(LD) $(LDFLAGS) -o $(KERNEL) build/boot.o build/kernel.o build/terminal.o build/gdt.o build/gdt_flush.o build/pic.o build/pit.o build/timer.o build/keyboard.o build/console.o build/pmm.o build/heap.o build/idt.o build/idt_flush.o build/isr.o build/paging.o build/framebuffer.o
+	$(CC) $(CFLAGS) -c src/kernel/task.c -o build/task.o
+
+build/context_switch.o: src/kernel/context_switch.asm
+	mkdir -p build
+	$(AS) $(ASFLAGS) src/kernel/context_switch.asm -o build/context_switch.o
+
+$(KERNEL): build/boot.o build/kernel.o build/terminal.o build/gdt.o build/gdt_flush.o build/pic.o build/pit.o build/timer.o build/keyboard.o build/console.o build/pmm.o build/heap.o build/idt.o build/idt_flush.o build/isr.o build/paging.o build/task.o build/context_switch.o build/framebuffer.o linker.ld
+	mkdir -p build
+	$(LD) $(LDFLAGS) -o $(KERNEL) build/boot.o build/kernel.o build/terminal.o build/gdt.o build/gdt_flush.o build/pic.o build/pit.o build/timer.o build/keyboard.o build/console.o build/pmm.o build/heap.o build/idt.o build/idt_flush.o build/isr.o build/paging.o build/task.o build/context_switch.o build/framebuffer.o
 
 iso: $(KERNEL)
 	mkdir -p iso/boot/grub

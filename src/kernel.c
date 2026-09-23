@@ -11,6 +11,7 @@
 #include "kernel/pmm.h"
 #include "kernel/paging.h"
 #include "kernel/heap.h"
+#include "kernel/task.h"
 #include "drivers/framebuffer.h"
 
 static void test_heap(void);
@@ -110,6 +111,122 @@ static void show_multiboot_info(uint32_t magic,
     terminal_write(" bytes\n");
 }
 
+
+
+static void task_demo_a(void* argument)
+{
+    (void)argument;
+
+    for (uint32_t i = 1; i <= 5; i++)
+    {
+        terminal_setcolor(
+            VGA_COLOR_LIGHT_GREEN,
+            VGA_COLOR_BLACK
+        );
+
+        terminal_write("TASK A: iteration ");
+        print_uint(i);
+        terminal_putchar('\n');
+
+        task_yield();
+    }
+
+    terminal_setcolor(
+        VGA_COLOR_LIGHT_GREY,
+        VGA_COLOR_BLACK
+    );
+}
+
+static void task_demo_b(void* argument)
+{
+    (void)argument;
+
+    for (uint32_t i = 1; i <= 5; i++)
+    {
+        terminal_setcolor(
+            VGA_COLOR_LIGHT_CYAN,
+            VGA_COLOR_BLACK
+        );
+
+        terminal_write("TASK B: iteration ");
+        print_uint(i);
+        terminal_putchar('\n');
+
+        task_yield();
+    }
+
+    terminal_setcolor(
+        VGA_COLOR_LIGHT_GREY,
+        VGA_COLOR_BLACK
+    );
+}
+
+static void test_tasks(void)
+{
+    terminal_setcolor(
+        VGA_COLOR_LIGHT_CYAN,
+        VGA_COLOR_BLACK
+    );
+
+    terminal_write(
+        "\nTask Management / Context Switching\n"
+    );
+
+    terminal_setcolor(
+        VGA_COLOR_LIGHT_GREY,
+        VGA_COLOR_BLACK
+    );
+
+    task_initialize();
+
+    int task_a =
+        task_create(task_demo_a, 0);
+
+    int task_b =
+        task_create(task_demo_b, 0);
+
+    if (task_a < 0 || task_b < 0)
+    {
+        terminal_write(
+            "Task creation FAILED.\n"
+        );
+
+        return;
+    }
+
+    terminal_write("Task A created: ");
+    print_uint((uint32_t)task_a);
+    terminal_putchar('\n');
+
+    terminal_write("Task B created: ");
+    print_uint((uint32_t)task_b);
+    terminal_putchar('\n');
+
+    terminal_write(
+        "Starting cooperative task switch test...\n"
+    );
+
+    /*
+     * Give the newly created tasks execution time.
+     * Each task yields after every iteration.
+     */
+    for (uint32_t i = 0; i < 12; i++)
+        task_yield();
+
+    terminal_setcolor(
+        VGA_COLOR_LIGHT_GREEN,
+        VGA_COLOR_BLACK
+    );
+
+    terminal_write(
+        "Context switching test returned to kernel.\n"
+    );
+
+    terminal_setcolor(
+        VGA_COLOR_LIGHT_GREY,
+        VGA_COLOR_BLACK
+    );
+}
 
 void kernel_main(uint32_t multiboot_magic,
                  uint32_t multiboot_info)
@@ -305,6 +422,8 @@ void kernel_main(uint32_t multiboot_magic,
     );
 
     test_heap();
+
+    test_tasks();
 
     /*
      * CPU and interrupt subsystem.
