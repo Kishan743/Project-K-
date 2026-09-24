@@ -414,6 +414,10 @@ void kernel_main(uint32_t multiboot_magic,
     );
 
     terminal_write(
+        "TSS initialized successfully.\n"
+    );
+
+    terminal_write(
         "IDT initialized successfully.\n"
     );
 

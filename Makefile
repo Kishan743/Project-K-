@@ -29,9 +29,13 @@ build/framebuffer.o: src/drivers/framebuffer.c src/drivers/framebuffer.h src/ker
 	mkdir -p build
 	$(CC) $(CFLAGS) -c src/drivers/framebuffer.c -o build/framebuffer.o
 
-build/gdt.o: src/kernel/gdt.c src/kernel/gdt.h
+build/gdt.o: src/kernel/gdt.c src/kernel/gdt.h src/kernel/tss.h
 	mkdir -p build
 	$(CC) $(CFLAGS) -c src/kernel/gdt.c -o build/gdt.o
+
+build/tss.o: src/kernel/tss.c src/kernel/tss.h src/kernel/gdt.h
+	mkdir -p build
+	$(CC) $(CFLAGS) -c src/kernel/tss.c -o build/tss.o
 
 build/gdt_flush.o: src/kernel/gdt_flush.asm
 	mkdir -p build
@@ -85,9 +89,9 @@ build/task.o: src/kernel/task.c src/kernel/task.h src/kernel/heap.h
 	mkdir -p build
 	$(CC) $(CFLAGS) -c src/kernel/task.c -o build/task.o
 
-$(KERNEL): build/boot.o build/kernel.o build/terminal.o build/gdt.o build/gdt_flush.o build/pic.o build/pit.o build/timer.o build/keyboard.o build/console.o build/pmm.o build/heap.o build/idt.o build/idt_flush.o build/isr.o build/paging.o build/task.o build/framebuffer.o linker.ld
+$(KERNEL): build/boot.o build/kernel.o build/terminal.o build/gdt.o build/tss.o build/gdt_flush.o build/pic.o build/pit.o build/timer.o build/keyboard.o build/console.o build/pmm.o build/heap.o build/idt.o build/idt_flush.o build/isr.o build/paging.o build/task.o build/framebuffer.o linker.ld
 	mkdir -p build
-	$(LD) $(LDFLAGS) -o $(KERNEL) build/boot.o build/kernel.o build/terminal.o build/gdt.o build/gdt_flush.o build/pic.o build/pit.o build/timer.o build/keyboard.o build/console.o build/pmm.o build/heap.o build/idt.o build/idt_flush.o build/isr.o build/paging.o build/task.o build/framebuffer.o
+	$(LD) $(LDFLAGS) -o $(KERNEL) build/boot.o build/kernel.o build/terminal.o build/gdt.o build/tss.o build/gdt_flush.o build/pic.o build/pit.o build/timer.o build/keyboard.o build/console.o build/pmm.o build/heap.o build/idt.o build/idt_flush.o build/isr.o build/paging.o build/task.o build/framebuffer.o
 
 iso: $(KERNEL)
 	mkdir -p iso/boot/grub
