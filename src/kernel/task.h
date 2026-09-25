@@ -6,9 +6,16 @@
 #define TASK_MAX        8
 #define TASK_STACK_SIZE (16 * 1024)
 
+#define TASK_KERNEL 0
+#define TASK_USER   1
+
 /*
- * This structure must exactly match the stack produced by
- * PUSHA in irq_common, followed by the interrupt frame.
+ * This structure matches the stack produced by
+ * PUSHA in irq_common, followed by the normalized
+ * interrupt frame.
+ *
+ * useresp/userss are present when the interrupted
+ * task originated from Ring 3.
  */
 typedef struct cpu_context
 {
@@ -27,6 +34,9 @@ typedef struct cpu_context
     uint32_t eip;
     uint32_t cs;
     uint32_t eflags;
+
+    uint32_t useresp;
+    uint32_t userss;
 
 } cpu_context_t;
 
@@ -52,6 +62,11 @@ typedef struct task
     void* argument;
     void* stack;
 
+    uint32_t type;
+
+    uint32_t user_entry;
+    uint32_t user_stack;
+
     volatile uint32_t switches;
     volatile uint32_t work_counter;
 
@@ -64,15 +79,20 @@ int task_create(
     void* argument
 );
 
-/*
- * Called by the timer interrupt.
- *
- * current_context is the complete CPU context that was
- * just saved by irq_common.
- *
- * Returns the context that irq_common must restore.
- */
+int task_create_user(
+    uint32_t user_entry,
+    uint32_t user_stack
+);
+
 cpu_context_t* task_schedule(
+    cpu_context_t* current_context
+);
+
+cpu_context_t* task_yield(
+    cpu_context_t* current_context
+);
+
+cpu_context_t* task_exit_syscall(
     cpu_context_t* current_context
 );
 

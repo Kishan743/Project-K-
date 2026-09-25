@@ -46,6 +46,7 @@ typedef struct tss_entry
 } __attribute__((packed)) tss_entry_t;
 
 void tss_initialize(uint32_t kernel_stack);
+void tss_set_kernel_stack(uint32_t kernel_stack);
 
 tss_entry_t* tss_get(void);
 

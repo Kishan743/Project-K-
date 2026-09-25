@@ -4,6 +4,9 @@ section .text
 
 extern exception_handler
 extern irq_handler
+extern syscall_entry
+
+global syscall128
 
 global isr0
 global isr1
@@ -290,6 +293,27 @@ irq15:
     push 47
     jmp irq_common
 
+
+
+; Ring-3 software interrupt entry for int 0x80.
+; Unlike hardware IRQs, this path must not send a PIC EOI.
+syscall128:
+    push 0
+    push 128
+
+    pusha
+
+    mov eax, esp
+    push eax
+    call syscall_entry
+    add esp, 4
+
+    mov esp, eax
+
+    popa
+    add esp, 8
+
+    iretd
 
 
 irq_common:

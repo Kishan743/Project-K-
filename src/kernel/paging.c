@@ -216,6 +216,15 @@ int paging_map_page(uint32_t virtual_address,
         }
     }
 
+    /*
+     * User access requires the page-directory entry
+     * and the page-table entry to both have PAGE_USER.
+     */
+    if (flags & PAGE_USER)
+    {
+        page_directory[directory_index] |= PAGE_USER;
+    }
+
     page_table[table_index] =
         (physical_address & 0xFFFFF000) |
         (flags & 0xFFF);

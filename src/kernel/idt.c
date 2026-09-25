@@ -56,6 +56,8 @@ extern void irq13(void);
 extern void irq14(void);
 extern void irq15(void);
 
+extern void syscall128(void);
+
 extern void pic_send_eoi(uint8_t irq);
 
 struct idt_entry
@@ -284,6 +286,16 @@ void idt_initialize(void)
     idt_set_gate(45, (uint32_t)irq13, 0x08, 0x8E);
     idt_set_gate(46, (uint32_t)irq14, 0x08, 0x8E);
     idt_set_gate(47, (uint32_t)irq15, 0x08, 0x8E);
+
+    /*
+     * User-callable system call gate.
+     *
+     * DPL 3 allows Ring 3 code to execute:
+     *     int 0x80
+     *
+     * 0xEE = present + DPL 3 + 32-bit interrupt gate.
+     */
+    idt_set_gate(128, (uint32_t)syscall128, 0x08, 0xEE);
 
     idt_flush((uint32_t)&idt_descriptor);
 }

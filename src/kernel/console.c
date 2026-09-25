@@ -4,6 +4,7 @@
 #include "pmm.h"
 #include "heap.h"
 #include "task.h"
+#include "syscall.h"
 #include "../drivers/terminal.h"
 
 #define CONSOLE_BUFFER_SIZE 128
@@ -90,6 +91,7 @@ static void console_execute(void)
         terminal_write("  malloc - Allocate kernel heap memory\n");
         terminal_write("  heap - Show kernel heap status\n");
         terminal_write("  tasks - Show scheduler task status\n");
+        terminal_write("  syscalls - Show syscall count\n");
     }
     else if (string_equals(input_buffer, "clear"))
     {
@@ -149,6 +151,13 @@ static void console_execute(void)
 
             terminal_putchar('\n');
         }
+    }
+    else if (string_equals(input_buffer, "syscalls"))
+    {
+        terminal_write("System Calls\n");
+        terminal_write("Handled: ");
+        console_print_uint(syscall_get_count());
+        terminal_putchar('\n');
     }
     else if (string_equals(input_buffer, "malloc"))
     {

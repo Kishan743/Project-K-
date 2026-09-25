@@ -85,13 +85,17 @@ build/paging.o: src/kernel/paging.c src/kernel/paging.h
 	mkdir -p build
 	$(CC) $(CFLAGS) -c src/kernel/paging.c -o build/paging.o
 
-build/task.o: src/kernel/task.c src/kernel/task.h src/kernel/heap.h
+build/task.o: src/kernel/task.c src/kernel/task.h src/kernel/heap.h src/kernel/gdt.h src/kernel/tss.h src/kernel/paging.h src/kernel/pmm.h
 	mkdir -p build
 	$(CC) $(CFLAGS) -c src/kernel/task.c -o build/task.o
 
-$(KERNEL): build/boot.o build/kernel.o build/terminal.o build/gdt.o build/tss.o build/gdt_flush.o build/pic.o build/pit.o build/timer.o build/keyboard.o build/console.o build/pmm.o build/heap.o build/idt.o build/idt_flush.o build/isr.o build/paging.o build/task.o build/framebuffer.o linker.ld
+build/syscall.o: src/kernel/syscall.c src/kernel/syscall.h src/kernel/task.h
 	mkdir -p build
-	$(LD) $(LDFLAGS) -o $(KERNEL) build/boot.o build/kernel.o build/terminal.o build/gdt.o build/tss.o build/gdt_flush.o build/pic.o build/pit.o build/timer.o build/keyboard.o build/console.o build/pmm.o build/heap.o build/idt.o build/idt_flush.o build/isr.o build/paging.o build/task.o build/framebuffer.o
+	$(CC) $(CFLAGS) -c src/kernel/syscall.c -o build/syscall.o
+
+$(KERNEL): build/boot.o build/kernel.o build/terminal.o build/gdt.o build/tss.o build/gdt_flush.o build/pic.o build/pit.o build/timer.o build/keyboard.o build/console.o build/pmm.o build/heap.o build/idt.o build/idt_flush.o build/isr.o build/paging.o build/task.o build/syscall.o build/framebuffer.o linker.ld
+	mkdir -p build
+	$(LD) $(LDFLAGS) -o $(KERNEL) build/boot.o build/kernel.o build/terminal.o build/gdt.o build/tss.o build/gdt_flush.o build/pic.o build/pit.o build/timer.o build/keyboard.o build/console.o build/pmm.o build/heap.o build/idt.o build/idt_flush.o build/isr.o build/paging.o build/task.o build/syscall.o build/framebuffer.o
 
 iso: $(KERNEL)
 	mkdir -p iso/boot/grub

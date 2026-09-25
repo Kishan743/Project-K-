@@ -164,7 +164,15 @@ static void test_tasks(void)
     int task_b =
         task_create(task_demo_b, 0);
 
-    if (task_a < 0 || task_b < 0)
+    int user_task =
+        task_create_user(
+            0x40000000,
+            0x40002000
+        );
+
+    if (task_a < 0 ||
+        task_b < 0 ||
+        user_task < 0)
     {
         terminal_write(
             "Task creation FAILED.\n"
@@ -181,8 +189,16 @@ static void test_tasks(void)
     print_uint((uint32_t)task_b);
     terminal_putchar('\n');
 
+    terminal_write("User task created: ");
+    print_uint((uint32_t)user_task);
+    terminal_putchar('\n');
+
     terminal_write(
         "Preemptive scheduler ready.\n"
+    );
+
+    terminal_write(
+        "Ring 3 user task prepared.\n"
     );
 }
 
