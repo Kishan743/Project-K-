@@ -2,6 +2,7 @@
 #define PROJECT_K_TASK_H
 
 #include <stdint.h>
+#include "paging.h"
 
 #define TASK_MAX        8
 #define TASK_STACK_SIZE (16 * 1024)
@@ -46,7 +47,6 @@ typedef enum
     TASK_READY,
     TASK_RUNNING,
     TASK_TERMINATED
-
 } task_state_t;
 
 typedef void (*task_entry_t)(void* argument);
@@ -66,6 +66,22 @@ typedef struct task
 
     uint32_t user_entry;
     uint32_t user_stack;
+
+    /*
+     * Address space owned by this task.
+     *
+     * Kernel tasks use the shared kernel address space.
+     * User tasks receive a private address space.
+     */
+    address_space_t* address_space;
+
+    /*
+     * Physical frames owned by a user task.
+     *
+     * These are released when the user task is destroyed.
+     */
+    uint32_t user_code_frame;
+    uint32_t user_stack_frame;
 
     volatile uint32_t switches;
     volatile uint32_t work_counter;
