@@ -17,7 +17,7 @@ build/boot.o: boot/boot.asm
 	mkdir -p build
 	$(AS) $(ASFLAGS) boot/boot.asm -o build/boot.o
 
-build/kernel.o: src/kernel.c src/kernel/multiboot.h src/kernel/pmm.h src/kernel/paging.h src/kernel/heap.h src/kernel/task.h
+build/kernel.o: src/kernel.c src/kernel/multiboot.h src/kernel/pmm.h src/kernel/paging.h src/kernel/heap.h src/kernel/task.h src/kernel/elf.h
 	mkdir -p build
 	$(CC) $(CFLAGS) -c src/kernel.c -o build/kernel.o
 
@@ -93,9 +93,25 @@ build/syscall.o: src/kernel/syscall.c src/kernel/syscall.h src/kernel/task.h
 	mkdir -p build
 	$(CC) $(CFLAGS) -c src/kernel/syscall.c -o build/syscall.o
 
-$(KERNEL): build/boot.o build/kernel.o build/terminal.o build/gdt.o build/tss.o build/gdt_flush.o build/pic.o build/pit.o build/timer.o build/keyboard.o build/console.o build/pmm.o build/heap.o build/idt.o build/idt_flush.o build/isr.o build/paging.o build/task.o build/syscall.o build/framebuffer.o linker.ld
+build/user_test.o: src/user/test.asm
 	mkdir -p build
-	$(LD) $(LDFLAGS) -o $(KERNEL) build/boot.o build/kernel.o build/terminal.o build/gdt.o build/tss.o build/gdt_flush.o build/pic.o build/pit.o build/timer.o build/keyboard.o build/console.o build/pmm.o build/heap.o build/idt.o build/idt_flush.o build/isr.o build/paging.o build/task.o build/syscall.o build/framebuffer.o
+	$(AS) $(ASFLAGS) src/user/test.asm -o build/user_test.o
+
+build/user_test.elf: build/user_test.o src/user/linker.ld
+	mkdir -p build
+	$(LD) -m elf_i386 -T src/user/linker.ld -o build/user_test.elf build/user_test.o
+
+build/user_test_blob.o: build/user_test.elf
+	mkdir -p build
+	objcopy -I binary -O elf32-i386 -B i386 build/user_test.elf build/user_test_blob.o
+
+build/elf.o: src/kernel/elf.c src/kernel/elf.h src/kernel/paging.h src/kernel/pmm.h
+	mkdir -p build
+	$(CC) $(CFLAGS) -c src/kernel/elf.c -o build/elf.o
+
+$(KERNEL): build/boot.o build/kernel.o build/terminal.o build/gdt.o build/tss.o build/gdt_flush.o build/pic.o build/pit.o build/timer.o build/keyboard.o build/console.o build/pmm.o build/heap.o build/idt.o build/idt_flush.o build/isr.o build/paging.o build/task.o build/syscall.o build/framebuffer.o build/elf.o build/user_test_blob.o linker.ld
+	mkdir -p build
+	$(LD) $(LDFLAGS) -o $(KERNEL) build/boot.o build/kernel.o build/terminal.o build/gdt.o build/tss.o build/gdt_flush.o build/pic.o build/pit.o build/timer.o build/keyboard.o build/console.o build/pmm.o build/heap.o build/idt.o build/idt_flush.o build/isr.o build/paging.o build/task.o build/syscall.o build/framebuffer.o build/elf.o build/user_test_blob.o
 
 iso: $(KERNEL)
 	mkdir -p iso/boot/grub

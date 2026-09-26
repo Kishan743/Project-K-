@@ -14,6 +14,11 @@
 #include "kernel/task.h"
 #include "drivers/framebuffer.h"
 
+#include "kernel/elf.h"
+
+extern const unsigned char _binary_build_user_test_elf_start[];
+extern const unsigned char _binary_build_user_test_elf_end[];
+
 static void test_heap(void);
 static void test_pmm(void);
 
@@ -164,10 +169,16 @@ static void test_tasks(void)
     int task_b =
         task_create(task_demo_b, 0);
 
+    uint32_t user_elf_size =
+        (uint32_t)(
+            _binary_build_user_test_elf_end -
+            _binary_build_user_test_elf_start
+        );
+
     int user_task =
-        task_create_user(
-            0x40000000,
-            0x40002000
+        task_create_user_elf(
+            _binary_build_user_test_elf_start,
+            user_elf_size
         );
 
     if (task_a < 0 ||

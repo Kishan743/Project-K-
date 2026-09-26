@@ -4,6 +4,7 @@
 #include "tss.h"
 #include "paging.h"
 #include "pmm.h"
+#include "elf.h"
 
 #define USER_CODE_ADDRESS  0x40000000
 #define USER_STACK_ADDRESS 0x40001000
@@ -512,6 +513,232 @@ int task_create_user(
 
     return (int)task->id;
 }
+
+
+int task_create_user_elf(
+    const void* image,
+    uint32_t image_size
+)
+{
+    if (image == 0 || image_size == 0)
+        return -1;
+
+    if (task_count >= TASK_MAX)
+        return -1;
+
+    task_t* task =
+        task_find_free_slot();
+
+    if (task == 0)
+        return -1;
+
+    /*
+     * Create a private address space for the process.
+     */
+    address_space_t* address_space =
+        paging_create_address_space();
+
+    if (address_space == 0)
+        return -1;
+
+    elf_load_result_t load_result;
+
+    if (elf_load(
+            address_space,
+            image,
+            image_size,
+            &load_result
+        ) != 0)
+    {
+        paging_destroy_address_space(
+            address_space
+        );
+
+        return -1;
+    }
+
+    /*
+     * Allocate one user stack page.
+     *
+     * The initial ELF user-space range is:
+     *
+     *   0x40000000 - 0x7FFFFFFF
+     *
+     * Keep the stack at the top of that range.
+     */
+    const uint32_t user_stack_address =
+        0x7FFFF000;
+
+    const uint32_t user_stack_top =
+        0x80000000;
+
+    uint32_t stack_frame =
+        (uint32_t)pmm_alloc_frame();
+
+    if (stack_frame == 0)
+    {
+        paging_destroy_address_space(
+            address_space
+        );
+
+        return -1;
+    }
+
+    /*
+     * Zero the new stack page.
+     */
+    uint8_t zero_page[PAGE_SIZE];
+
+    for (uint32_t i = 0;
+         i < PAGE_SIZE;
+         i++)
+    {
+        zero_page[i] = 0;
+    }
+
+    if (paging_copy_to_physical(
+            stack_frame,
+            zero_page,
+            PAGE_SIZE
+        ) != 0)
+    {
+        pmm_free_frame(
+            (void*)stack_frame
+        );
+
+        paging_destroy_address_space(
+            address_space
+        );
+
+        return -1;
+    }
+
+    if (paging_map_user_page(
+            address_space,
+            user_stack_address,
+            stack_frame,
+            PAGE_PRESENT | PAGE_WRITABLE
+        ) != 0)
+    {
+        pmm_free_frame(
+            (void*)stack_frame
+        );
+
+        paging_destroy_address_space(
+            address_space
+        );
+
+        return -1;
+    }
+
+    /*
+     * Allocate the kernel stack used when this process
+     * enters the kernel from Ring 3.
+     */
+    void* kernel_stack =
+        kmalloc(TASK_STACK_SIZE);
+
+    if (kernel_stack == 0)
+    {
+        paging_destroy_address_space(
+            address_space
+        );
+
+        return -1;
+    }
+
+    task->id =
+        (uint32_t)(task - tasks);
+
+    task->esp = 0;
+    task->state = TASK_READY;
+
+    task->entry = 0;
+    task->argument = 0;
+
+    task->type = TASK_USER;
+
+    task->user_entry =
+        load_result.entry;
+
+    task->user_stack =
+        user_stack_top;
+
+    task->address_space =
+        address_space;
+
+    /*
+     * These legacy fields are no longer used for ELF
+     * code ownership. The address-space destructor owns
+     * all user mappings.
+     */
+    task->user_code_frame = 0;
+
+    /*
+     * Keep the stack frame here temporarily for compatibility
+     * with the existing task structure. It is also owned by
+     * the address space and must not be freed separately after
+     * successful mapping.
+     */
+    task->user_stack_frame = 0;
+
+    task->stack =
+        kernel_stack;
+
+    task->switches = 0;
+    task->work_counter = 0;
+
+    /*
+     * Construct the initial Ring-3 IRET frame.
+     */
+    uint32_t kernel_stack_top =
+        ((uint32_t)kernel_stack +
+         TASK_STACK_SIZE) & ~0x0F;
+
+    uint32_t* sp =
+        (uint32_t*)kernel_stack_top;
+
+    /*
+     * Ring-3 IRET frame:
+     *
+     * USERSS
+     * USERESP
+     * EFLAGS
+     * USER CS
+     * ELF ENTRY
+     *
+     * followed by:
+     *
+     * error code
+     * interrupt number
+     * PUSHA registers
+     */
+    *(--sp) = GDT_USER_DATA;
+    *(--sp) = user_stack_top;
+    *(--sp) = 0x202;
+    *(--sp) = GDT_USER_CODE;
+    *(--sp) = load_result.entry;
+
+    *(--sp) = 0;
+    *(--sp) = 32;
+
+    *(--sp) = 0;
+    *(--sp) = 0;
+    *(--sp) = 0;
+    *(--sp) = 0;
+    *(--sp) = 0;
+    *(--sp) = 0;
+    *(--sp) = 0;
+    *(--sp) = 0;
+
+    task->esp =
+        (uint32_t)sp;
+
+    task_count++;
+
+    return (int)task->id;
+}
+
 
 cpu_context_t* task_schedule(
     cpu_context_t* current_context

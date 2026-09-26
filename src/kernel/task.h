@@ -100,6 +100,11 @@ int task_create_user(
     uint32_t user_stack
 );
 
+int task_create_user_elf(
+    const void* image,
+    uint32_t image_size
+);
+
 cpu_context_t* task_schedule(
     cpu_context_t* current_context
 );

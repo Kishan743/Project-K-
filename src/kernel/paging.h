@@ -62,5 +62,17 @@ void paging_switch_address_space(
 void paging_destroy_address_space(
     address_space_t* space
 );
+int paging_copy_to_physical(
+    uint32_t physical_address,
+    const void* source,
+    uint32_t size
+);
+
+int paging_copy_from_physical(
+    void* destination,
+    uint32_t physical_address,
+    uint32_t size
+);
+
 
 #endif

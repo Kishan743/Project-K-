@@ -5,6 +5,9 @@
 #define INITIAL_PAGE_TABLES 8
 
 #define USER_SPACE_FIRST_DIRECTORY 256
+#define USER_SPACE_LAST_DIRECTORY 511
+#define PAGING_TEMP_ADDRESS 0x02000000
+#define PAGING_TEMP_DIRECTORY 8
 
 #define PAGING_MAX_ADDRESS_SPACES 16
 
@@ -12,6 +15,14 @@ static uint32_t page_directory[1024]
     __attribute__((aligned(PAGE_SIZE)));
 
 static uint32_t initial_page_tables[INITIAL_PAGE_TABLES][1024]
+    __attribute__((aligned(PAGE_SIZE)));
+
+/*
+ * One supervisor-only page table used as a temporary physical
+ * memory mapping window. Its first PTE is rewritten whenever
+ * the kernel needs to access an arbitrary physical frame.
+ */
+static uint32_t temporary_page_table[1024]
     __attribute__((aligned(PAGE_SIZE)));
 
 static uint32_t paging_directory_address;
@@ -256,6 +267,44 @@ static int owns_page_table(
     ) != 0;
 }
 
+
+static int paging_map_temporary_page(
+    uint32_t physical_address
+)
+{
+    uint32_t physical =
+        physical_address & 0xFFFFF000;
+
+    if (physical_address & (PAGE_SIZE - 1))
+        return -1;
+
+    temporary_page_table[0] =
+        physical |
+        PAGE_PRESENT |
+        PAGE_WRITABLE;
+
+    __asm__ volatile (
+        "invlpg (%0)"
+        :
+        : "r"((void*)PAGING_TEMP_ADDRESS)
+        : "memory"
+    );
+
+    return 0;
+}
+
+static void paging_unmap_temporary_page(void)
+{
+    temporary_page_table[0] = 0;
+
+    __asm__ volatile (
+        "invlpg (%0)"
+        :
+        : "r"((void*)PAGING_TEMP_ADDRESS)
+        : "memory"
+    );
+}
+
 void paging_initialize(void)
 {
     for (uint32_t i = 0;
@@ -264,6 +313,22 @@ void paging_initialize(void)
     {
         page_directory[i] = 0;
     }
+
+    for (uint32_t i = 0;
+         i < 1024;
+         i++)
+    {
+        temporary_page_table[i] = 0;
+    }
+
+    /*
+     * PDE 8 corresponds to virtual address 0x02000000.
+     * It is deliberately supervisor-only.
+     */
+    page_directory[PAGING_TEMP_DIRECTORY] =
+        (uint32_t)&temporary_page_table[0] |
+        PAGE_PRESENT |
+        PAGE_WRITABLE;
 
     for (uint32_t table = 0;
          table < INITIAL_PAGE_TABLES;
@@ -483,8 +548,19 @@ int paging_map_user_page(
     uint32_t directory_index =
         (virtual_address >> 22) & 0x3FF;
 
-    if (directory_index < USER_SPACE_FIRST_DIRECTORY)
+    /*
+     * User programs currently occupy PDE 256-511:
+     *
+     *   0x40000000 - 0x7FFFFFFF
+     *
+     * Keeping user mappings inside this range prevents them from
+     * colliding with higher kernel mappings such as the framebuffer.
+     */
+    if (directory_index < USER_SPACE_FIRST_DIRECTORY ||
+        directory_index > USER_SPACE_LAST_DIRECTORY)
+    {
         return -1;
+    }
 
     uint32_t* directory =
         directory_from_address(
@@ -494,9 +570,22 @@ int paging_map_user_page(
     if (directory == 0)
         return -1;
 
+    uint32_t directory_entry =
+        directory[directory_index];
+
+    /*
+     * If a PDE already exists, it must belong to this address
+     * space. Shared kernel page tables must never be converted
+     * into user-accessible mappings.
+     */
+    if ((directory_entry & PAGE_PRESENT) != 0 &&
+        !owns_page_table(space, directory_index))
+    {
+        return -1;
+    }
+
     uint32_t had_page_table =
-        directory[directory_index] &
-        PAGE_PRESENT;
+        directory_entry & PAGE_PRESENT;
 
     flags |= PAGE_USER;
     flags |= PAGE_PRESENT;
@@ -512,10 +601,6 @@ int paging_map_user_page(
     if (result != 0)
         return result;
 
-    /*
-     * If this mapping caused creation of a new page table,
-     * that page table belongs to this address space.
-     */
     if (!had_page_table)
     {
         mark_owned_page_table(
@@ -526,6 +611,7 @@ int paging_map_user_page(
 
     return 0;
 }
+
 
 void paging_switch_address_space(
     address_space_t* space
@@ -578,12 +664,17 @@ void paging_destroy_address_space(
         return;
 
     /*
-     * Only free page tables created by this address space.
+     * Release every page belonging to a private user page table,
+     * then release the page-table frame itself.
      *
-     * Shared kernel page tables remain owned by the kernel.
+     * This makes the address space the owner of all user-mapped
+     * physical frames. It works for ELF processes of arbitrary
+     * size rather than requiring the task layer to track a fixed
+     * number of frames.
      */
-    for (uint32_t directory_index = 0;
-         directory_index < 1024;
+    for (uint32_t directory_index =
+             USER_SPACE_FIRST_DIRECTORY;
+         directory_index <= USER_SPACE_LAST_DIRECTORY;
          directory_index++)
     {
         if (!owns_page_table(
@@ -602,9 +693,42 @@ void paging_destroy_address_space(
         uint32_t table_address =
             entry & 0xFFFFF000;
 
+        uint32_t* page_table =
+            (uint32_t*)table_address;
+
         if (table_address <
-            INITIAL_IDENTITY_MAP_SIZE)
+            INITIAL_IDENTITY_MAP_SIZE &&
+            page_table != 0)
         {
+            /*
+             * Free every physical frame mapped by this
+             * private user page table.
+             */
+            for (uint32_t table_index = 0;
+                 table_index < 1024;
+                 table_index++)
+            {
+                uint32_t page_entry =
+                    page_table[table_index];
+
+                if ((page_entry & PAGE_PRESENT) == 0)
+                    continue;
+
+                uint32_t physical_frame =
+                    page_entry & 0xFFFFF000;
+
+                if (physical_frame != 0 &&
+                    physical_frame <
+                        INITIAL_IDENTITY_MAP_SIZE)
+                {
+                    pmm_free_frame(
+                        (void*)physical_frame
+                    );
+                }
+
+                page_table[table_index] = 0;
+            }
+
             pmm_free_frame(
                 (void*)table_address
             );
@@ -647,3 +771,100 @@ void paging_destroy_address_space(
         }
     }
 }
+
+int paging_copy_to_physical(
+    uint32_t physical_address,
+    const void* source,
+    uint32_t size
+)
+{
+    if (source == 0 || size == 0)
+        return -1;
+
+    const uint8_t* src =
+        (const uint8_t*)source;
+
+    uint32_t remaining = size;
+    uint32_t current = physical_address;
+
+    while (remaining > 0)
+    {
+        uint32_t page_base =
+            current & 0xFFFFF000;
+
+        uint32_t page_offset =
+            current & (PAGE_SIZE - 1);
+
+        uint32_t chunk =
+            PAGE_SIZE - page_offset;
+
+        if (chunk > remaining)
+            chunk = remaining;
+
+        if (paging_map_temporary_page(page_base) != 0)
+            return -1;
+
+        uint8_t* destination =
+            (uint8_t*)(PAGING_TEMP_ADDRESS + page_offset);
+
+        for (uint32_t i = 0; i < chunk; i++)
+            destination[i] = src[i];
+
+        paging_unmap_temporary_page();
+
+        current += chunk;
+        src += chunk;
+        remaining -= chunk;
+    }
+
+    return 0;
+}
+
+int paging_copy_from_physical(
+    void* destination,
+    uint32_t physical_address,
+    uint32_t size
+)
+{
+    if (destination == 0 || size == 0)
+        return -1;
+
+    uint8_t* dst =
+        (uint8_t*)destination;
+
+    uint32_t remaining = size;
+    uint32_t current = physical_address;
+
+    while (remaining > 0)
+    {
+        uint32_t page_base =
+            current & 0xFFFFF000;
+
+        uint32_t page_offset =
+            current & (PAGE_SIZE - 1);
+
+        uint32_t chunk =
+            PAGE_SIZE - page_offset;
+
+        if (chunk > remaining)
+            chunk = remaining;
+
+        if (paging_map_temporary_page(page_base) != 0)
+            return -1;
+
+        const uint8_t* source =
+            (const uint8_t*)(PAGING_TEMP_ADDRESS + page_offset);
+
+        for (uint32_t i = 0; i < chunk; i++)
+            dst[i] = source[i];
+
+        paging_unmap_temporary_page();
+
+        current += chunk;
+        dst += chunk;
+        remaining -= chunk;
+    }
+
+    return 0;
+}
+
