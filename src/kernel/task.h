@@ -75,14 +75,6 @@ typedef struct task
      */
     address_space_t* address_space;
 
-    /*
-     * Physical frames owned by a user task.
-     *
-     * These are released when the user task is destroyed.
-     */
-    uint32_t user_code_frame;
-    uint32_t user_stack_frame;
-
     volatile uint32_t switches;
     volatile uint32_t work_counter;
 
@@ -95,10 +87,6 @@ int task_create(
     void* argument
 );
 
-int task_create_user(
-    uint32_t user_entry,
-    uint32_t user_stack
-);
 
 int task_create_user_elf(
     const void* image,

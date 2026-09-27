@@ -9,6 +9,7 @@ typedef struct cpu_context cpu_context_t;
 #define SYS_GETPID     2
 #define SYS_YIELD      3
 #define SYS_EXIT       4
+#define SYS_READ_CHAR  5
 
 cpu_context_t* syscall_entry(cpu_context_t* frame);
 

@@ -39,58 +39,6 @@ static void task_bootstrap(void)
  * This function must run while the user address space
  * containing USER_CODE_ADDRESS is active.
  */
-static void user_program_install(void)
-{
-    static const uint8_t program[] =
-    {
-        /* mov eax, SYS_WRITE_CHAR */
-        0xB8, 0x01, 0x00, 0x00, 0x00,
-
-        /* mov ebx, 'U' */
-        0xBB, 0x55, 0x00, 0x00, 0x00,
-
-        /* int 0x80 */
-        0xCD, 0x80,
-
-        /* mov eax, SYS_GETPID */
-        0xB8, 0x02, 0x00, 0x00, 0x00,
-
-        /* int 0x80 */
-        0xCD, 0x80,
-
-        /* add eax, '0' */
-        0x83, 0xC0, 0x30,
-
-        /* mov ebx, eax */
-        0x89, 0xC3,
-
-        /* mov eax, SYS_WRITE_CHAR */
-        0xB8, 0x01, 0x00, 0x00, 0x00,
-
-        /* int 0x80 */
-        0xCD, 0x80,
-
-        /* mov eax, SYS_EXIT */
-        0xB8, 0x04, 0x00, 0x00, 0x00,
-
-        /* int 0x80 */
-        0xCD, 0x80
-    };
-
-    uint8_t* destination =
-        (uint8_t*)USER_CODE_ADDRESS;
-
-    for (uint32_t i = 0;
-         i < sizeof(program);
-         i++)
-    {
-        destination[i] = program[i];
-    }
-}
-
-/*
- * Find an available task slot.
- */
 static task_t* task_find_free_slot(void)
 {
     for (uint32_t i = 1;
@@ -132,23 +80,6 @@ static void task_release_user_resources(task_t* task)
         task->address_space = 0;
     }
 
-    if (task->user_code_frame != 0)
-    {
-        pmm_free_frame(
-            (void*)task->user_code_frame
-        );
-
-        task->user_code_frame = 0;
-    }
-
-    if (task->user_stack_frame != 0)
-    {
-        pmm_free_frame(
-            (void*)task->user_stack_frame
-        );
-
-        task->user_stack_frame = 0;
-    }
 }
 
 /*
@@ -187,8 +118,6 @@ void task_initialize(void)
         tasks[i].user_entry = 0;
         tasks[i].user_stack = 0;
         tasks[i].address_space = 0;
-        tasks[i].user_code_frame = 0;
-        tasks[i].user_stack_frame = 0;
         tasks[i].switches = 0;
         tasks[i].work_counter = 0;
     }
@@ -246,9 +175,6 @@ int task_create(
     task->address_space =
         paging_get_kernel_address_space();
 
-    task->user_code_frame = 0;
-    task->user_stack_frame = 0;
-
     task->switches = 0;
     task->work_counter = 0;
 
@@ -292,228 +218,6 @@ int task_create(
 
     return (int)task->id;
 }
-
-int task_create_user(
-    uint32_t user_entry,
-    uint32_t user_stack
-)
-{
-    if (task_count >= TASK_MAX)
-        return -1;
-
-    task_t* task =
-        task_find_free_slot();
-
-    if (task == 0)
-        return -1;
-
-    /*
-     * Create a completely separate user address space.
-     */
-    address_space_t* address_space =
-        paging_create_address_space();
-
-    if (address_space == 0)
-        return -1;
-
-    /*
-     * Allocate the physical frame for user code.
-     */
-    uint32_t code_frame =
-        (uint32_t)pmm_alloc_frame();
-
-    if (code_frame == 0)
-    {
-        paging_destroy_address_space(
-            address_space
-        );
-
-        return -1;
-    }
-
-    /*
-     * Allocate the physical frame for user stack.
-     */
-    uint32_t stack_frame =
-        (uint32_t)pmm_alloc_frame();
-
-    if (stack_frame == 0)
-    {
-        pmm_free_frame(
-            (void*)code_frame
-        );
-
-        paging_destroy_address_space(
-            address_space
-        );
-
-        return -1;
-    }
-
-    /*
-     * Map user code into the new address space.
-     */
-    if (paging_map_user_page(
-            address_space,
-            USER_CODE_ADDRESS,
-            code_frame,
-            PAGE_PRESENT | PAGE_WRITABLE) != 0)
-    {
-        pmm_free_frame(
-            (void*)stack_frame
-        );
-
-        pmm_free_frame(
-            (void*)code_frame
-        );
-
-        paging_destroy_address_space(
-            address_space
-        );
-
-        return -1;
-    }
-
-    /*
-     * Map user stack into the new address space.
-     */
-    if (paging_map_user_page(
-            address_space,
-            USER_STACK_ADDRESS,
-            stack_frame,
-            PAGE_PRESENT | PAGE_WRITABLE) != 0)
-    {
-        pmm_free_frame(
-            (void*)stack_frame
-        );
-
-        pmm_free_frame(
-            (void*)code_frame
-        );
-
-        paging_destroy_address_space(
-            address_space
-        );
-
-        return -1;
-    }
-
-    /*
-     * Store ownership information before activating the
-     * address space.
-     */
-    task->id =
-        (uint32_t)(task - tasks);
-
-    task->esp = 0;
-    task->state = TASK_READY;
-    task->entry = 0;
-    task->argument = 0;
-
-    task->type = TASK_USER;
-
-    task->user_entry =
-        user_entry;
-
-    task->user_stack =
-        user_stack;
-
-    task->address_space =
-        address_space;
-
-    task->user_code_frame =
-        code_frame;
-
-    task->user_stack_frame =
-        stack_frame;
-
-    task->switches = 0;
-    task->work_counter = 0;
-
-    /*
-     * Allocate the kernel stack used whenever this process
-     * enters the kernel through Ring 3.
-     */
-    void* kernel_stack =
-        kmalloc(TASK_STACK_SIZE);
-
-    if (kernel_stack == 0)
-    {
-        task_release_user_resources(task);
-
-        return -1;
-    }
-
-    task->stack =
-        kernel_stack;
-
-    /*
-     * Temporarily activate the user address space so the
-     * kernel can initialize the user code page through its
-     * virtual address.
-     */
-    paging_switch_address_space(
-        address_space
-    );
-
-    user_program_install();
-
-    /*
-     * Return to the kernel address space before continuing
-     * task creation.
-     */
-    paging_switch_address_space(
-        paging_get_kernel_address_space()
-    );
-
-    uint32_t stack_top =
-        ((uint32_t)kernel_stack + TASK_STACK_SIZE) & ~0x0F;
-
-    uint32_t* sp =
-        (uint32_t*)stack_top;
-
-    /*
-     * Ring-3 IRET frame:
-     *
-     * USERSS
-     * USERESP
-     * EFLAGS
-     * CS
-     * EIP
-     *
-     * followed by:
-     *
-     * error code
-     * interrupt number
-     * PUSHA registers
-     */
-
-    *(--sp) = GDT_USER_DATA;
-    *(--sp) = user_stack;
-    *(--sp) = 0x202;
-    *(--sp) = GDT_USER_CODE;
-    *(--sp) = user_entry;
-
-    *(--sp) = 0;
-    *(--sp) = 32;
-
-    *(--sp) = 0;
-    *(--sp) = 0;
-    *(--sp) = 0;
-    *(--sp) = 0;
-    *(--sp) = 0;
-    *(--sp) = 0;
-    *(--sp) = 0;
-    *(--sp) = 0;
-
-    task->esp =
-        (uint32_t)sp;
-
-    task_count++;
-
-    return (int)task->id;
-}
-
 
 int task_create_user_elf(
     const void* image,
@@ -666,21 +370,6 @@ int task_create_user_elf(
 
     task->address_space =
         address_space;
-
-    /*
-     * These legacy fields are no longer used for ELF
-     * code ownership. The address-space destructor owns
-     * all user mappings.
-     */
-    task->user_code_frame = 0;
-
-    /*
-     * Keep the stack frame here temporarily for compatibility
-     * with the existing task structure. It is also owned by
-     * the address space and must not be freed separately after
-     * successful mapping.
-     */
-    task->user_stack_frame = 0;
 
     task->stack =
         kernel_stack;

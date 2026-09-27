@@ -717,9 +717,7 @@ void paging_destroy_address_space(
                 uint32_t physical_frame =
                     page_entry & 0xFFFFF000;
 
-                if (physical_frame != 0 &&
-                    physical_frame <
-                        INITIAL_IDENTITY_MAP_SIZE)
+                if (physical_frame != 0)
                 {
                     pmm_free_frame(
                         (void*)physical_frame

@@ -1,5 +1,6 @@
 #include "syscall.h"
 #include "task.h"
+#include "keyboard.h"
 #include "../drivers/terminal.h"
 
 static volatile uint32_t syscall_count;
@@ -13,6 +14,14 @@ static uint32_t syscall_write_char(uint32_t character)
 static uint32_t syscall_getpid(void)
 {
     return task_get_current_id();
+}
+
+static uint32_t syscall_read_char(void)
+{
+    if (!keyboard_has_input())
+        return 0;
+
+    return (uint32_t)(uint8_t)keyboard_getchar();
 }
 
 cpu_context_t* syscall_entry(cpu_context_t* frame)
@@ -30,6 +39,10 @@ cpu_context_t* syscall_entry(cpu_context_t* frame)
 
         case SYS_GETPID:
             frame->eax = syscall_getpid();
+            return frame;
+
+        case SYS_READ_CHAR:
+            frame->eax = syscall_read_char();
             return frame;
 
         case SYS_YIELD:
