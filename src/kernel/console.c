@@ -239,6 +239,9 @@ void console_initialize(void)
 
 void console_process_input(void)
 {
+    if (keyboard_get_owner() != KEYBOARD_OWNER_KERNEL)
+        return;
+
     while (keyboard_has_input())
     {
         char c = keyboard_getchar();

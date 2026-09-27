@@ -5,6 +5,7 @@
 #include "paging.h"
 #include "pmm.h"
 #include "elf.h"
+#include "keyboard.h"
 
 #define USER_CODE_ADDRESS  0x40000000
 #define USER_STACK_ADDRESS 0x40001000
@@ -93,6 +94,9 @@ static void task_release_resources(task_t* task)
     if (task->type == TASK_USER)
     {
         task_release_user_resources(task);
+
+        if (keyboard_get_owner() == KEYBOARD_OWNER_USER)
+            keyboard_set_owner(KEYBOARD_OWNER_KERNEL);
     }
 
     if (task->stack != 0)
@@ -215,6 +219,8 @@ int task_create(
         (uint32_t)sp;
 
     task_count++;
+
+    keyboard_set_owner(KEYBOARD_OWNER_USER);
 
     return (int)task->id;
 }

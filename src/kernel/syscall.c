@@ -18,6 +18,9 @@ static uint32_t syscall_getpid(void)
 
 static uint32_t syscall_read_char(void)
 {
+    if (keyboard_get_owner() != KEYBOARD_OWNER_USER)
+        return 0;
+
     if (!keyboard_has_input())
         return 0;
 

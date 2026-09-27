@@ -14,6 +14,7 @@ static volatile uint8_t buffer_tail;
 
 static uint8_t shift_pressed;
 static uint8_t caps_lock;
+static uint32_t keyboard_owner;
 
 static inline uint8_t inb(uint16_t port)
 {
@@ -77,6 +78,17 @@ void keyboard_initialize(void)
 
     shift_pressed = 0;
     caps_lock = 0;
+    keyboard_owner = KEYBOARD_OWNER_KERNEL;
+}
+
+void keyboard_set_owner(uint32_t owner)
+{
+    keyboard_owner = owner;
+}
+
+uint32_t keyboard_get_owner(void)
+{
+    return keyboard_owner;
 }
 
 static void keyboard_buffer_push(char c)
