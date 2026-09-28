@@ -85,6 +85,23 @@ build/paging.o: src/kernel/paging.c src/kernel/paging.h
 	mkdir -p build
 	$(CC) $(CFLAGS) -c src/kernel/paging.c -o build/paging.o
 
+
+build/cpu.o: src/kernel/arch/cpu.c src/kernel/arch/cpu.h
+	mkdir -p build
+	$(CC) $(CFLAGS) -c src/kernel/arch/cpu.c -o build/cpu.o
+
+build/process.o: src/kernel/process/process.c src/kernel/process/process.h src/kernel/paging.h
+	mkdir -p build
+	$(CC) $(CFLAGS) -c src/kernel/process/process.c -o build/process.o
+
+build/thread.o: src/kernel/process/thread.c src/kernel/process/thread.h src/kernel/process/process.h src/kernel/heap.h
+	mkdir -p build
+	$(CC) $(CFLAGS) -c src/kernel/process/thread.c -o build/thread.o
+
+build/scheduler.o: src/kernel/scheduler/scheduler.c src/kernel/scheduler/scheduler.h src/kernel/process/thread.h src/kernel/process/process.h
+	mkdir -p build
+	$(CC) $(CFLAGS) -c src/kernel/scheduler/scheduler.c -o build/scheduler.o
+
 build/task.o: src/kernel/task.c src/kernel/task.h src/kernel/heap.h src/kernel/gdt.h src/kernel/tss.h src/kernel/paging.h src/kernel/pmm.h
 	mkdir -p build
 	$(CC) $(CFLAGS) -c src/kernel/task.c -o build/task.o
@@ -109,9 +126,9 @@ build/elf.o: src/kernel/elf.c src/kernel/elf.h src/kernel/paging.h src/kernel/pm
 	mkdir -p build
 	$(CC) $(CFLAGS) -c src/kernel/elf.c -o build/elf.o
 
-$(KERNEL): build/boot.o build/kernel.o build/terminal.o build/gdt.o build/tss.o build/gdt_flush.o build/pic.o build/pit.o build/timer.o build/keyboard.o build/console.o build/pmm.o build/heap.o build/idt.o build/idt_flush.o build/isr.o build/paging.o build/task.o build/syscall.o build/framebuffer.o build/elf.o build/user_test_blob.o linker.ld
+$(KERNEL): build/boot.o build/kernel.o build/terminal.o build/gdt.o build/tss.o build/gdt_flush.o build/pic.o build/pit.o build/timer.o build/keyboard.o build/console.o build/pmm.o build/heap.o build/idt.o build/idt_flush.o build/isr.o build/paging.o build/cpu.o build/process.o build/thread.o build/scheduler.o build/task.o build/syscall.o build/framebuffer.o build/elf.o build/user_test_blob.o linker.ld
 	mkdir -p build
-	$(LD) $(LDFLAGS) -o $(KERNEL) build/boot.o build/kernel.o build/terminal.o build/gdt.o build/tss.o build/gdt_flush.o build/pic.o build/pit.o build/timer.o build/keyboard.o build/console.o build/pmm.o build/heap.o build/idt.o build/idt_flush.o build/isr.o build/paging.o build/task.o build/syscall.o build/framebuffer.o build/elf.o build/user_test_blob.o
+	$(LD) $(LDFLAGS) -o $(KERNEL) build/boot.o build/kernel.o build/terminal.o build/gdt.o build/tss.o build/gdt_flush.o build/pic.o build/pit.o build/timer.o build/keyboard.o build/console.o build/pmm.o build/heap.o build/idt.o build/idt_flush.o build/isr.o build/paging.o build/cpu.o build/process.o build/thread.o build/scheduler.o build/task.o build/syscall.o build/framebuffer.o build/elf.o build/user_test_blob.o
 
 iso: $(KERNEL)
 	mkdir -p iso/boot/grub

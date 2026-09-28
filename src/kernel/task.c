@@ -6,19 +6,15 @@
 #include "pmm.h"
 #include "elf.h"
 #include "keyboard.h"
-
-#define USER_CODE_ADDRESS  0x40000000
-#define USER_STACK_ADDRESS 0x40001000
-#define USER_STACK_TOP     0x40002000
-
-static task_t tasks[TASK_MAX];
+#include "process/process.h"
+#include "process/thread.h"
+#include "scheduler/scheduler.h"
 
 static uint32_t task_count;
-static task_t* current_task;
 
 static void task_bootstrap(void)
 {
-    task_t* task = current_task;
+    task_t* task = task_get_current();
 
     if (task != 0 && task->entry != 0)
         task->entry(task->argument);
@@ -29,114 +25,23 @@ static void task_bootstrap(void)
         __asm__ volatile ("hlt");
 }
 
-/*
- * Ring-3 syscall ABI test:
- *
- * 1. SYS_WRITE_CHAR -> print 'U'
- * 2. SYS_GETPID     -> EAX = current task ID
- * 3. Convert PID to ASCII and print it
- * 4. SYS_EXIT       -> terminate
- *
- * This function must run while the user address space
- * containing USER_CODE_ADDRESS is active.
- */
-static task_t* task_find_free_slot(void)
-{
-    for (uint32_t i = 1;
-         i < TASK_MAX;
-         i++)
-    {
-        if (tasks[i].state == TASK_UNUSED ||
-            tasks[i].state == TASK_TERMINATED)
-        {
-            return &tasks[i];
-        }
-    }
-
-    return 0;
-}
-
-/*
- * Release resources owned by a user task.
- *
- * This does not free the task structure itself because
- * the task table is statically allocated.
- */
-static void task_release_user_resources(task_t* task)
-{
-    if (task == 0)
-        return;
-
-    if (task->address_space != 0)
-    {
-        /*
-         * The address space contains the user page tables.
-         * paging_destroy_address_space() releases those
-         * page-table frames and the page-directory frame.
-         */
-        paging_destroy_address_space(
-            task->address_space
-        );
-
-        task->address_space = 0;
-    }
-
-}
-
-/*
- * Release all resources owned by a terminated task.
- */
-static void task_release_resources(task_t* task)
-{
-    if (task == 0)
-        return;
-
-    if (task->type == TASK_USER)
-    {
-        task_release_user_resources(task);
-
-        if (keyboard_get_owner() == KEYBOARD_OWNER_USER)
-            keyboard_set_owner(KEYBOARD_OWNER_KERNEL);
-    }
-
-    if (task->stack != 0)
-    {
-        kfree(task->stack);
-        task->stack = 0;
-    }
-}
-
 void task_initialize(void)
 {
-    for (uint32_t i = 0;
-         i < TASK_MAX;
-         i++)
-    {
-        tasks[i].id = i;
-        tasks[i].esp = 0;
-        tasks[i].state = TASK_UNUSED;
-        tasks[i].entry = 0;
-        tasks[i].argument = 0;
-        tasks[i].stack = 0;
-        tasks[i].type = TASK_KERNEL;
-        tasks[i].user_entry = 0;
-        tasks[i].user_stack = 0;
-        tasks[i].address_space = 0;
-        tasks[i].switches = 0;
-        tasks[i].work_counter = 0;
-    }
-
-    /*
-     * Task 0 is the existing kernel execution context.
-     */
-    tasks[0].state = TASK_RUNNING;
-    tasks[0].type = TASK_KERNEL;
-
-    tasks[0].address_space =
-        paging_get_kernel_address_space();
+    process_initialize();
+    scheduler_initialize();
 
     task_count = 1;
-    current_task = &tasks[0];
+
+    task_t* current = task_get_current();
+
+    if (current != 0)
+    {
+        current->process =
+            process_get_current();
+
+        current->type =
+            TASK_KERNEL;
+    }
 }
 
 int task_create(
@@ -150,54 +55,43 @@ int task_create(
     if (task_count >= TASK_MAX)
         return -1;
 
+    process_t* process =
+        process_create_kernel();
+
+    if (process == 0)
+        return -1;
+
     task_t* task =
-        task_find_free_slot();
+        thread_create(
+            process,
+            entry,
+            argument
+        );
 
     if (task == 0)
+    {
+        process_destroy(process);
         return -1;
+    }
 
-    void* stack =
-        kmalloc(TASK_STACK_SIZE);
-
-    if (stack == 0)
-        return -1;
-
-    task->id =
-        (uint32_t)(task - tasks);
-
-    task->state = TASK_READY;
-    task->entry = entry;
-    task->argument = argument;
-    task->stack = stack;
     task->type = TASK_KERNEL;
-    task->user_entry = 0;
-    task->user_stack = 0;
-
-    /*
-     * Kernel tasks execute in the shared kernel address space.
-     */
-    task->address_space =
-        paging_get_kernel_address_space();
-
-    task->switches = 0;
-    task->work_counter = 0;
 
     uint32_t stack_top =
-        ((uint32_t)stack + TASK_STACK_SIZE) & ~0x0F;
+        ((uint32_t)task->kernel_stack +
+         TASK_STACK_SIZE) & ~0x0F;
 
     uint32_t* sp =
         (uint32_t*)stack_top;
 
     /*
-     * Synthetic interrupt frame.
+     * Synthetic interrupt frame:
      *
+     * PUSHA registers
+     * interrupt number
+     * error code
      * EIP
      * CS
      * EFLAGS
-     * error code
-     * interrupt number
-     *
-     * followed by the PUSHA register frame.
      */
 
     *(--sp) = 0x202;
@@ -220,8 +114,6 @@ int task_create(
 
     task_count++;
 
-    keyboard_set_owner(KEYBOARD_OWNER_USER);
-
     return (int)task->id;
 }
 
@@ -236,15 +128,6 @@ int task_create_user_elf(
     if (task_count >= TASK_MAX)
         return -1;
 
-    task_t* task =
-        task_find_free_slot();
-
-    if (task == 0)
-        return -1;
-
-    /*
-     * Create a private address space for the process.
-     */
     address_space_t* address_space =
         paging_create_address_space();
 
@@ -267,15 +150,6 @@ int task_create_user_elf(
         return -1;
     }
 
-    /*
-     * Allocate one user stack page.
-     *
-     * The initial ELF user-space range is:
-     *
-     *   0x40000000 - 0x7FFFFFFF
-     *
-     * Keep the stack at the top of that range.
-     */
     const uint32_t user_stack_address =
         0x7FFFF000;
 
@@ -294,9 +168,6 @@ int task_create_user_elf(
         return -1;
     }
 
-    /*
-     * Zero the new stack page.
-     */
     uint8_t zero_page[PAGE_SIZE];
 
     for (uint32_t i = 0;
@@ -327,7 +198,7 @@ int task_create_user_elf(
             address_space,
             user_stack_address,
             stack_frame,
-            PAGE_PRESENT | PAGE_WRITABLE
+            PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER
         ) != 0)
     {
         pmm_free_frame(
@@ -341,14 +212,12 @@ int task_create_user_elf(
         return -1;
     }
 
-    /*
-     * Allocate the kernel stack used when this process
-     * enters the kernel from Ring 3.
-     */
-    void* kernel_stack =
-        kmalloc(TASK_STACK_SIZE);
+    process_t* process =
+        process_create_user(
+            address_space
+        );
 
-    if (kernel_stack == 0)
+    if (process == 0)
     {
         paging_destroy_address_space(
             address_space
@@ -357,57 +226,34 @@ int task_create_user_elf(
         return -1;
     }
 
-    task->id =
-        (uint32_t)(task - tasks);
+    task_t* task =
+        thread_create(
+            process,
+            0,
+            0
+        );
 
-    task->esp = 0;
-    task->state = TASK_READY;
-
-    task->entry = 0;
-    task->argument = 0;
+    if (task == 0)
+    {
+        process_destroy(process);
+        return -1;
+    }
 
     task->type = TASK_USER;
+    task->user_entry = load_result.entry;
+    task->user_stack = user_stack_top;
 
-    task->user_entry =
-        load_result.entry;
-
-    task->user_stack =
-        user_stack_top;
-
-    task->address_space =
-        address_space;
-
-    task->stack =
-        kernel_stack;
-
-    task->switches = 0;
-    task->work_counter = 0;
-
-    /*
-     * Construct the initial Ring-3 IRET frame.
-     */
-    uint32_t kernel_stack_top =
-        ((uint32_t)kernel_stack +
+    uint32_t stack_top =
+        ((uint32_t)task->kernel_stack +
          TASK_STACK_SIZE) & ~0x0F;
 
     uint32_t* sp =
-        (uint32_t*)kernel_stack_top;
+        (uint32_t*)stack_top;
 
     /*
-     * Ring-3 IRET frame:
-     *
-     * USERSS
-     * USERESP
-     * EFLAGS
-     * USER CS
-     * ELF ENTRY
-     *
-     * followed by:
-     *
-     * error code
-     * interrupt number
-     * PUSHA registers
+     * Ring-3 IRET frame.
      */
+
     *(--sp) = GDT_USER_DATA;
     *(--sp) = user_stack_top;
     *(--sp) = 0x202;
@@ -431,126 +277,27 @@ int task_create_user_elf(
 
     task_count++;
 
+    keyboard_set_owner(
+        KEYBOARD_OWNER_USER
+    );
+
     return (int)task->id;
 }
-
 
 cpu_context_t* task_schedule(
     cpu_context_t* current_context
 )
 {
-    if (current_task != 0)
-    {
-        current_task->esp =
-            (uint32_t)current_context;
-
-        if (current_task->state == TASK_RUNNING)
-            current_task->state = TASK_READY;
-    }
-
-    task_t* next = 0;
-
-    uint32_t start =
-        current_task != 0
-            ? current_task->id
-            : 0;
-
-    for (uint32_t offset = 1;
-         offset <= TASK_MAX;
-         offset++)
-    {
-        uint32_t index =
-            (start + offset) % TASK_MAX;
-
-        if (tasks[index].state == TASK_READY)
-        {
-            next = &tasks[index];
-            break;
-        }
-    }
-
-    if (next == 0)
-    {
-        if (current_task != 0)
-            current_task->state = TASK_RUNNING;
-
-        return current_context;
-    }
-
-    /*
-     * If the current task was terminated, its resources
-     * must be released only after we have selected another
-     * task. This prevents destroying the address space that
-     * is still active on the CPU.
-     */
-    task_t* previous_task =
-        current_task;
-
-    current_task =
-        next;
-
-    current_task->state =
-        TASK_RUNNING;
-
-    current_task->switches++;
-
-    /*
-     * Switch address spaces before returning the context.
-     */
-    if (current_task->address_space != 0)
-    {
-        paging_switch_address_space(
-            current_task->address_space
-        );
-    }
-    else
-    {
-        paging_switch_address_space(
-            paging_get_kernel_address_space()
-        );
-    }
-
-    /*
-     * Ring-3 tasks need their kernel stack loaded into TSS.esp0.
-     */
-    if (current_task->type == TASK_USER)
-    {
-        uint32_t kernel_stack_top =
-            ((uint32_t)current_task->stack +
-             TASK_STACK_SIZE) & ~0x0F;
-
-        tss_set_kernel_stack(
-            kernel_stack_top
-        );
-    }
-
-    /*
-     * A terminated task is now no longer the active task,
-     * so its private resources can be released.
-     */
-    if (previous_task != 0 &&
-        previous_task != current_task &&
-        previous_task->state == TASK_TERMINATED)
-    {
-        task_release_resources(
-            previous_task
-        );
-
-        previous_task->state =
-            TASK_UNUSED;
-
-        if (task_count > 1)
-            task_count--;
-    }
-
-    return (cpu_context_t*)current_task->esp;
+    return scheduler_schedule(
+        current_context
+    );
 }
 
 cpu_context_t* task_yield(
     cpu_context_t* current_context
 )
 {
-    return task_schedule(
+    return scheduler_yield(
         current_context
     );
 }
@@ -559,24 +306,40 @@ cpu_context_t* task_exit_syscall(
     cpu_context_t* current_context
 )
 {
-    if (current_task == 0)
+    task_t* current =
+        task_get_current();
+
+    if (current == 0)
         return current_context;
 
-    current_task->state =
+    current->state =
         TASK_TERMINATED;
 
-    return task_schedule(
+    if (current->process != 0)
+        process_terminate(
+            current->process
+        );
+
+    return scheduler_schedule(
         current_context
     );
 }
 
 void task_exit(void)
 {
-    if (current_task == 0)
+    task_t* current =
+        task_get_current();
+
+    if (current == 0)
         return;
 
-    current_task->state =
+    current->state =
         TASK_TERMINATED;
+
+    if (current->process != 0)
+        process_terminate(
+            current->process
+        );
 
     while (1)
         __asm__ volatile ("hlt");
@@ -584,10 +347,12 @@ void task_exit(void)
 
 uint32_t task_get_current_id(void)
 {
-    if (current_task == 0)
-        return 0;
+    task_t* current =
+        task_get_current();
 
-    return current_task->id;
+    return current != 0
+        ? current->id
+        : 0;
 }
 
 uint32_t task_get_count(void)
@@ -597,10 +362,10 @@ uint32_t task_get_count(void)
 
 task_t* task_get_current(void)
 {
-    return current_task;
+    return thread_get_current();
 }
 
 const task_t* task_get_table(void)
 {
-    return tasks;
+    return thread_get_table();
 }

@@ -1,84 +1,25 @@
 #ifndef PROJECT_K_TASK_H
 #define PROJECT_K_TASK_H
 
-#include <stdint.h>
-#include "paging.h"
+#include "arch/cpu.h"
+#include "process/process.h"
+#include "process/thread.h"
 
-#define TASK_MAX        8
-#define TASK_STACK_SIZE (16 * 1024)
+#define TASK_MAX        THREAD_MAX
+#define TASK_STACK_SIZE THREAD_STACK_SIZE
 
-#define TASK_KERNEL 0
-#define TASK_USER   1
+#define TASK_KERNEL THREAD_KERNEL
+#define TASK_USER   THREAD_USER
 
-/*
- * This structure matches the stack produced by
- * PUSHA in irq_common, followed by the normalized
- * interrupt frame.
- *
- * useresp/userss are present when the interrupted
- * task originated from Ring 3.
- */
-typedef struct cpu_context
-{
-    uint32_t edi;
-    uint32_t esi;
-    uint32_t ebp;
-    uint32_t saved_esp;
-    uint32_t ebx;
-    uint32_t edx;
-    uint32_t ecx;
-    uint32_t eax;
+typedef thread_t task_t;
+typedef thread_state_t task_state_t;
+typedef thread_entry_t task_entry_t;
 
-    uint32_t interrupt_number;
-    uint32_t error_code;
-
-    uint32_t eip;
-    uint32_t cs;
-    uint32_t eflags;
-
-    uint32_t useresp;
-    uint32_t userss;
-
-} cpu_context_t;
-
-typedef enum
-{
-    TASK_UNUSED = 0,
-    TASK_READY,
-    TASK_RUNNING,
-    TASK_TERMINATED
-} task_state_t;
-
-typedef void (*task_entry_t)(void* argument);
-
-typedef struct task
-{
-    uint32_t id;
-    uint32_t esp;
-
-    task_state_t state;
-
-    task_entry_t entry;
-    void* argument;
-    void* stack;
-
-    uint32_t type;
-
-    uint32_t user_entry;
-    uint32_t user_stack;
-
-    /*
-     * Address space owned by this task.
-     *
-     * Kernel tasks use the shared kernel address space.
-     * User tasks receive a private address space.
-     */
-    address_space_t* address_space;
-
-    volatile uint32_t switches;
-    volatile uint32_t work_counter;
-
-} task_t;
+#define TASK_UNUSED     THREAD_UNUSED
+#define TASK_READY      THREAD_READY
+#define TASK_RUNNING    THREAD_RUNNING
+#define TASK_BLOCKED    THREAD_BLOCKED
+#define TASK_TERMINATED THREAD_TERMINATED
 
 void task_initialize(void);
 
@@ -86,7 +27,6 @@ int task_create(
     task_entry_t entry,
     void* argument
 );
-
 
 int task_create_user_elf(
     const void* image,
