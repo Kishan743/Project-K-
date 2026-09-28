@@ -3,7 +3,8 @@
 #include "timer.h"
 #include "keyboard.h"
 #include "pic.h"
-#include "task.h"
+#include "arch/cpu.h"
+#include "scheduler/scheduler.h"
 extern void idt_flush(uint32_t);
 
 extern void isr0(void);
@@ -225,7 +226,7 @@ cpu_context_t* irq_handler(cpu_context_t* frame)
      * was interrupted.
      */
     if (irq == 0)
-        return task_schedule(frame);
+        return scheduler_schedule(frame);
 
     return frame;
 }

@@ -1,5 +1,8 @@
 #include "syscall.h"
-#include "task.h"
+#include "arch/cpu.h"
+#include "process/process.h"
+#include "process/thread.h"
+#include "scheduler/scheduler.h"
 #include "keyboard.h"
 #include "../drivers/terminal.h"
 
@@ -13,7 +16,7 @@ static uint32_t syscall_write_char(uint32_t character)
 
 static uint32_t syscall_getpid(void)
 {
-    return task_get_current_id();
+    return process_get_current_id();
 }
 
 static uint32_t syscall_read_char(void)
@@ -49,10 +52,22 @@ cpu_context_t* syscall_entry(cpu_context_t* frame)
             return frame;
 
         case SYS_YIELD:
-            return task_yield(frame);
+            return scheduler_yield(frame);
 
         case SYS_EXIT:
-            return task_exit_syscall(frame);
+        {
+            thread_t* current = thread_get_current();
+
+            if (current != 0)
+            {
+                current->state = THREAD_TERMINATED;
+
+                if (current->process != 0)
+                    process_terminate(current->process);
+            }
+
+            return scheduler_schedule(frame);
+        }
 
         default:
             frame->eax = (uint32_t)-1;
